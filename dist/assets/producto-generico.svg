@@ -1,0 +1,19 @@
+<svg width="960" height="720" viewBox="0 0 960 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Producto">
+  <rect width="960" height="720" fill="#ECF2EE"/>
+  <path d="M0 0H960V720H0V0Z" fill="url(#bg)"/>
+  <ellipse cx="487" cy="586" rx="302" ry="52" fill="#B9CDC3" opacity=".55"/>
+  <rect x="275" y="189" width="410" height="330" rx="42" fill="#FFF8EA" stroke="#1B6B5F" stroke-width="18"/>
+  <path d="M347 193C347 119 407 59 481 59C555 59 615 119 615 193" stroke="#F4B942" stroke-width="30" stroke-linecap="round"/>
+  <path d="M350 289H610" stroke="#1B6B5F" stroke-width="22" stroke-linecap="round"/>
+  <path d="M350 364H561" stroke="#315F9F" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="360" cy="447" r="31" fill="#F4B942"/>
+  <circle cx="455" cy="447" r="31" fill="#1B6B5F"/>
+  <circle cx="550" cy="447" r="31" fill="#B33A3A"/>
+  <defs>
+    <linearGradient id="bg" x1="82" y1="77" x2="838" y2="655" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F1E6"/>
+      <stop offset=".55" stop-color="#E7F2ED"/>
+      <stop offset="1" stop-color="#F6E0A8"/>
+    </linearGradient>
+  </defs>
+</svg>

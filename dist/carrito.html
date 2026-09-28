@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Carrito | Tienda de Pedidos</title>
+    <meta name="description" content="Carrito y envio de pedido por WhatsApp.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231b6b5f'/%3E%3Cpath d='M18 23h28l-3 22H21L18 23Z' fill='%23fff7e8'/%3E%3Cpath d='M24 23a8 8 0 0 1 16 0' fill='none' stroke='%23f4b942' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body data-page="carrito">
+    <header class="topbar">
+      <a class="brand" href="index.html" aria-label="Inicio">
+        <span class="brand-mark">TP</span>
+        <span>Tienda de Pedidos</span>
+      </a>
+      <nav class="nav" aria-label="Principal">
+        <a href="tienda.html">Tienda</a>
+        <a href="historial.html">Historial</a>
+        <a class="cart-link active" href="carrito.html">Carrito <span data-cart-count>0</span></a>
+      </nav>
+    </header>
+
+    <main class="section">
+      <div class="page-title">
+        <div>
+          <p class="section-kicker">Pedido</p>
+          <h1>Carrito</h1>
+        </div>
+        <a class="button secondary" href="tienda.html">Agregar mas</a>
+      </div>
+
+      <section class="cart-layout">
+        <div>
+          <div id="cartItems" class="cart-list"></div>
+          <button class="button danger" id="clearCartBtn" type="button">Limpiar carrito</button>
+        </div>
+
+        <form class="checkout-panel" id="checkoutForm">
+          <h2>Datos del cliente</h2>
+          <label>
+            <span>Nombre</span>
+            <input id="customerName" type="text" placeholder="Nombre del cliente" required>
+          </label>
+
+          <fieldset class="field-group">
+            <legend>Ubicacion</legend>
+            <button class="button secondary full" id="detectLocationBtn" type="button">Usar ubicacion exacta</button>
+            <label>
+              <span>O escribir direccion</span>
+              <textarea id="manualLocation" rows="3" placeholder="Calle, colonia, referencias"></textarea>
+            </label>
+            <p class="muted" id="locationStatus">Sin ubicacion seleccionada.</p>
+          </fieldset>
+
+          <fieldset class="field-group">
+            <legend>Tipo de envio</legend>
+            <label class="radio-row">
+              <input type="radio" name="shippingType" value="Entrega a domicilio" checked>
+              <span>Entrega a domicilio</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="shippingType" value="Pasar a buscar">
+              <span>Pasar a buscar</span>
+            </label>
+          </fieldset>
+
+          <div class="checkout-total">
+            <span>Total</span>
+            <strong id="cartTotal">$0.00</strong>
+          </div>
+          <button class="button whatsapp full" type="submit">Hacer pedido por WhatsApp</button>
+        </form>
+      </section>
+    </main>
+
+    <div class="toast" data-toast role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

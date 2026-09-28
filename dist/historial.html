@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Historial | Tienda de Pedidos</title>
+    <meta name="description" content="Historial local de pedidos creados.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231b6b5f'/%3E%3Cpath d='M18 23h28l-3 22H21L18 23Z' fill='%23fff7e8'/%3E%3Cpath d='M24 23a8 8 0 0 1 16 0' fill='none' stroke='%23f4b942' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body data-page="historial">
+    <header class="topbar">
+      <a class="brand" href="index.html" aria-label="Inicio">
+        <span class="brand-mark">TP</span>
+        <span>Tienda de Pedidos</span>
+      </a>
+      <nav class="nav" aria-label="Principal">
+        <a href="tienda.html">Tienda</a>
+        <a class="active" href="historial.html">Historial</a>
+        <a class="cart-link" href="carrito.html">Carrito <span data-cart-count>0</span></a>
+      </nav>
+    </header>
+
+    <main class="section">
+      <div class="page-title">
+        <div>
+          <p class="section-kicker">Pedidos hechos</p>
+          <h1>Historial</h1>
+        </div>
+        <button class="button danger" id="clearHistoryBtn" type="button">Limpiar historial</button>
+      </div>
+      <section class="history-list" id="historyList"></section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
