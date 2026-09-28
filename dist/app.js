@@ -248,13 +248,39 @@ function initDetail() {
       <h1>${product.name}</h1>
       <p>${product.description}</p>
       <strong class="price">${money(product.price)}</strong>
+      <div class="detail-quantity">
+        <span>Cantidad</span>
+        <div class="quantity quantity-input" aria-label="Cantidad para agregar">
+          <button type="button" data-detail-minus aria-label="Quitar uno">-</button>
+          <input id="detailQuantity" type="number" min="1" step="1" value="1" inputmode="numeric">
+          <button type="button" data-detail-plus aria-label="Agregar uno">+</button>
+        </div>
+      </div>
       <div class="detail-actions">
         <button class="button primary" type="button" data-add="${product.id}">Agregar al carrito</button>
         <a class="button secondary" href="carrito.html">Ir al carrito</a>
       </div>
     </div>
   `;
-  holder.querySelector("[data-add]")?.addEventListener("click", () => addToCart(product.id));
+  const quantityInput = holder.querySelector("#detailQuantity");
+  const normalizeQuantity = () => {
+    const parsed = Number.parseInt(quantityInput.value, 10);
+    const quantity = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    quantityInput.value = quantity;
+    return quantity;
+  };
+
+  holder.querySelector("[data-detail-minus]")?.addEventListener("click", () => {
+    quantityInput.value = Math.max(1, normalizeQuantity() - 1);
+  });
+  holder.querySelector("[data-detail-plus]")?.addEventListener("click", () => {
+    quantityInput.value = normalizeQuantity() + 1;
+  });
+  quantityInput?.addEventListener("change", normalizeQuantity);
+  holder.querySelector("[data-add]")?.addEventListener("click", () => {
+    addToCart(product.id, normalizeQuantity());
+    quantityInput.value = 1;
+  });
 }
 
 function renderCart() {

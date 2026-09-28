@@ -405,6 +405,37 @@ textarea:focus {
   font-size: clamp(34px, 5vw, 62px);
 }
 
+.detail-quantity {
+  display: grid;
+  gap: 8px;
+  width: max-content;
+}
+
+.quantity-input {
+  grid-template-columns: 40px 68px 40px;
+}
+
+.quantity-input input {
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  text-align: center;
+  font-weight: 900;
+  appearance: textfield;
+}
+
+.quantity-input input:focus {
+  outline: 3px solid rgba(27, 107, 95, 0.18);
+  border-color: transparent;
+}
+
+.quantity-input input::-webkit-outer-spin-button,
+.quantity-input input::-webkit-inner-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
 .back-link {
   display: inline-block;
   margin-bottom: 20px;
