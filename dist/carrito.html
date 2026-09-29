@@ -3,29 +3,30 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Carrito | Tienda de Pedidos</title>
+    <title>Carrito | Fonda Mexicana</title>
     <meta name="description" content="Carrito y envio de pedido por WhatsApp.">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231b6b5f'/%3E%3Cpath d='M18 23h28l-3 22H21L18 23Z' fill='%23fff7e8'/%3E%3Cpath d='M24 23a8 8 0 0 1 16 0' fill='none' stroke='%23f4b942' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body data-page="carrito">
     <header class="topbar">
       <a class="brand" href="index.html" aria-label="Inicio">
-        <span class="brand-mark">TP</span>
-        <span>Tienda de Pedidos</span>
+        <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="" aria-hidden="true">
+        <span>Fonda Mexicana</span>
       </a>
       <nav class="nav" aria-label="Principal">
-        <a href="tienda.html">Tienda</a>
-        <a href="historial.html">Historial</a>
+        <a href="tienda.html">Hacer pedido</a>
         <a class="cart-link active" href="carrito.html">Carrito <span data-cart-count>0</span></a>
+        <a href="mis-pedidos.html">En curso</a>
       </nav>
     </header>
 
     <main class="section">
       <div class="page-title">
         <div>
-          <p class="section-kicker">Pedido</p>
-          <h1>Carrito</h1>
+          <p class="section-kicker">Tu orden</p>
+          <h1>Revisa tu pedido</h1>
         </div>
         <a class="button secondary" href="tienda.html">Agregar mas</a>
       </div>
@@ -37,21 +38,11 @@
         </div>
 
         <form class="checkout-panel" id="checkoutForm">
-          <h2>Datos del cliente</h2>
+          <h2>Datos para enviar</h2>
           <label>
             <span>Nombre</span>
             <input id="customerName" type="text" placeholder="Nombre del cliente" required>
           </label>
-
-          <fieldset class="field-group">
-            <legend>Ubicacion</legend>
-            <button class="button secondary full" id="detectLocationBtn" type="button">Usar ubicacion exacta</button>
-            <label>
-              <span>O escribir direccion</span>
-              <textarea id="manualLocation" rows="3" placeholder="Calle, colonia, referencias"></textarea>
-            </label>
-            <p class="muted" id="locationStatus">Sin ubicacion seleccionada.</p>
-          </fieldset>
 
           <fieldset class="field-group">
             <legend>Tipo de envio</legend>
@@ -65,6 +56,85 @@
             </label>
           </fieldset>
 
+          <fieldset class="field-group" id="pickupPanel" hidden>
+            <legend>Nuestra tienda</legend>
+            <div class="pickup-card">
+              <iframe
+                title="Ubicacion de la tienda"
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4806.376132477655!2d-89.6237515!3d20.9998412!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8f56777acdba081f%3A0xd4955bfee08a7765!2sFonda%20Mexicana!5e1!3m2!1ses!2smx!4v1790699387729!5m2!1ses!2smx"
+                width="600"
+                height="450"
+                style="border:0"
+                allowfullscreen=""
+                loading="lazy"
+                referrerpolicy="strict-origin-when-cross-origin"></iframe>
+              <p class="pickup-address">Fonda Mexicana</p>
+              <p class="store-hours">Horario: lunes a viernes de 8:00 am a 4:00 pm.</p>
+              <a class="button secondary full" id="storeDirectionsLink" href="#" target="_blank" rel="noopener">Como llegar</a>
+            </div>
+          </fieldset>
+
+          <fieldset class="field-group" id="deliveryPanel">
+            <legend>Ubicacion de entrega</legend>
+            <div class="location-options">
+              <div class="location-method" data-location-panel="gps">
+                <label class="location-option">
+                  <input type="radio" name="locationMethod" value="gps">
+                  <span>Usar mi ubicacion actual</span>
+                </label>
+                <div class="location-method-body">
+                  <button class="button secondary full" id="detectLocationBtn" type="button">Detectar ubicacion</button>
+                  <div class="map-preview" id="gpsPreview">
+                    <strong>Punto GPS</strong>
+                    <span id="gpsPreviewText"></span>
+                    <a id="gpsPreviewLink" href="#" target="_blank" rel="noopener">Ver en Google Maps</a>
+                    <button class="button remove full" id="clearGpsBtn" type="button">Quitar ubicacion</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="location-method" data-location-panel="map">
+                <label class="location-option">
+                  <input type="radio" name="locationMethod" value="map">
+                  <span>Elegir punto en el mapa</span>
+                </label>
+                <div class="location-method-body">
+                  <button class="button secondary full" id="openMapBtn" type="button">Abrir mapa</button>
+                  <p class="map-hint">Mueve el pin hasta donde quieras recibir el pedido.</p>
+                  <div class="map-preview" id="mapPreview">
+                    <strong>Punto en el mapa</strong>
+                    <span id="mapPreviewText"></span>
+                    <a id="mapPreviewLink" href="#" target="_blank" rel="noopener">Ver en Google Maps</a>
+                    <button class="button remove full" id="clearMapBtn" type="button">Quitar ubicacion</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="location-method" data-location-panel="address">
+                <label class="location-option">
+                  <input type="radio" name="locationMethod" value="address" checked>
+                  <span>Escribir direccion</span>
+                </label>
+                <div class="location-method-body">
+                  <textarea id="manualLocation" rows="3" placeholder="Calle, colonia, numero y zona"></textarea>
+                </div>
+              </div>
+            </div>
+            <label>
+              <span>Direccion o referencia para ubicarte</span>
+              <textarea id="deliveryNotes" rows="2" placeholder="Calle, colonia, numero, color de casa, entre calles, porton, piso, etc."></textarea>
+            </label>
+            <p class="muted" id="locationStatus">Sin ubicacion seleccionada.</p>
+          </fieldset>
+
+          <fieldset class="field-group">
+            <legend>Forma de pago</legend>
+            <label class="radio-row">
+              <input type="radio" name="paymentMethod" value="whatsapp" checked>
+              <span>Confirmar por WhatsApp</span>
+            </label>
+          </fieldset>
+
           <div class="checkout-total">
             <span>Total</span>
             <strong id="cartTotal">$0.00</strong>
@@ -74,7 +144,33 @@
       </section>
     </main>
 
+    <div class="map-modal" id="mapModal" role="dialog" aria-modal="true" aria-labelledby="mapModalTitle">
+      <div class="map-modal-body">
+        <h2 id="mapModalTitle">Elige donde recibir tu pedido</h2>
+        <p class="map-hint">Arrastra el pin o toca el mapa para moverlo a otra esquina o calle.</p>
+        <div class="map-style-switch" id="mapStyleSwitch" role="group" aria-label="Tipo de mapa">
+          <button class="active" type="button" data-style="calle">Calle</button>
+          <button type="button" data-style="satelite">Satelite</button>
+        </div>
+        <div id="mapPicker"></div>
+        <p class="muted" id="mapModalStatus">Sin punto seleccionado.</p>
+        <div class="map-modal-actions">
+          <button class="button ghost" id="cancelMapBtn" type="button">Cancelar</button>
+          <button class="button primary" id="confirmMapBtn" type="button">Confirmar punto</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="loading-modal" id="locationLoading" role="status" aria-live="polite" aria-label="Detectando ubicacion">
+      <div class="loading-card">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <strong>Detectando ubicacion</strong>
+        <p>Espera un momento mientras buscamos tu punto exacto.</p>
+      </div>
+    </div>
+
     <div class="toast" data-toast role="status" aria-live="polite"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -3,29 +3,30 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tienda | Tienda de Pedidos</title>
-    <meta name="description" content="Productos disponibles para pedir por WhatsApp.">
+    <title>Hacer pedido | Fonda Mexicana</title>
+    <meta name="description" content="Menu de Fonda Mexicana para pedir por WhatsApp.">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231b6b5f'/%3E%3Cpath d='M18 23h28l-3 22H21L18 23Z' fill='%23fff7e8'/%3E%3Cpath d='M24 23a8 8 0 0 1 16 0' fill='none' stroke='%23f4b942' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body data-page="tienda">
     <header class="topbar">
       <a class="brand" href="index.html" aria-label="Inicio">
-        <span class="brand-mark">TP</span>
-        <span>Tienda de Pedidos</span>
+        <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="" aria-hidden="true">
+        <span>Fonda Mexicana</span>
       </a>
       <nav class="nav" aria-label="Principal">
-        <a class="active" href="tienda.html">Tienda</a>
-        <a href="historial.html">Historial</a>
+        <a class="active" href="tienda.html">Hacer pedido</a>
         <a class="cart-link" href="carrito.html">Carrito <span data-cart-count>0</span></a>
+        <a href="mis-pedidos.html">En curso</a>
       </nav>
     </header>
 
     <main class="section">
       <div class="page-title">
         <div>
-          <p class="section-kicker">Catalogo</p>
-          <h1>Elige productos para tu pedido</h1>
+          <p class="section-kicker">Pedidos en linea</p>
+          <h1>Elige tu pedido</h1>
+          <p class="store-hours">Horario: lunes a viernes de 8:00 am a 4:00 pm.</p>
         </div>
         <a class="button primary" href="carrito.html">Ver carrito</a>
       </div>
@@ -33,7 +34,7 @@
       <section class="catalog-tools" aria-label="Filtros del catalogo">
         <label class="search-box">
           <span>Buscar</span>
-          <input id="searchInput" type="search" placeholder="Bebidas, comidas, postres">
+          <input id="searchInput" type="search" placeholder="Busca bebidas, comidas o postres">
         </label>
         <div class="chips" role="list" aria-label="Categorias" id="categoryFilters"></div>
       </section>

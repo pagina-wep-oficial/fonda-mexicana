@@ -3,21 +3,21 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tienda de Pedidos</title>
-    <meta name="description" content="Catalogo de productos con pedidos por WhatsApp.">
+    <title>Fonda Mexicana</title>
+    <meta name="description" content="Fonda Mexicana en Merida: comida casera, pedidos a domicilio y pedidos para pasar a buscar.">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231b6b5f'/%3E%3Cpath d='M18 23h28l-3 22H21L18 23Z' fill='%23fff7e8'/%3E%3Cpath d='M24 23a8 8 0 0 1 16 0' fill='none' stroke='%23f4b942' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body data-page="inicio">
     <header class="topbar">
       <a class="brand" href="index.html" aria-label="Inicio">
-        <span class="brand-mark">TP</span>
-        <span>Tienda de Pedidos</span>
+        <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="" aria-hidden="true">
+        <span>Fonda Mexicana</span>
       </a>
       <nav class="nav" aria-label="Principal">
-        <a href="tienda.html">Tienda</a>
-        <a href="historial.html">Historial</a>
+        <a href="tienda.html">Hacer pedido</a>
         <a class="cart-link" href="carrito.html">Carrito <span data-cart-count>0</span></a>
+        <a href="mis-pedidos.html">En curso</a>
       </nav>
     </header>
 
@@ -25,22 +25,79 @@
       <section class="hero">
         <div class="hero-bg" aria-hidden="true"></div>
         <div class="hero-content">
-          <p class="eyebrow">Pedidos rapidos por WhatsApp</p>
-          <h1>Tienda de Pedidos</h1>
-          <p class="hero-copy">El cliente entra, elige productos, revisa su carrito y envia el pedido directo al WhatsApp del negocio con sus datos.</p>
-          <div class="hero-actions">
-            <a class="button primary" href="tienda.html">Entrar a la tienda</a>
-            <a class="button ghost" href="historial.html">Ver pedidos hechos</a>
+          <p class="eyebrow">Fonda Mexicana · Merida</p>
+          <h1>Sabor casero mexicano, sin complicarte.</h1>
+          <p class="hero-copy">Ven al local, pide a domicilio o encarga para pasar a buscar. Comida mexicana con sazón de casa y atención cercana.</p>
+          <div class="hero-proof" aria-label="Datos del local">
+            <span>★ 4.8</span>
+            <span>94 reseñas</span>
+            <span>$100-200 por persona</span>
           </div>
+          <p class="hours-pill">Abre lunes a viernes de 8:00 am a 4:00 pm</p>
+          <div class="hero-actions">
+            <a class="button primary" href="tienda.html">Hacer pedido</a>
+            <a class="button ghost" href="#ubicacion">Como llegar</a>
+          </div>
+        </div>
+        <aside class="service-ribbon" aria-label="Opciones de servicio">
+          <article><strong>Comer aqui</strong><span>Ambiente limpio y agradable</span></article>
+          <article><strong>A domicilio</strong><span>Pedido directo por WhatsApp</span></article>
+          <article><strong>Pasar a buscar</strong><span>Ordena y recoge cuando este listo</span></article>
+        </aside>
+      </section>
+
+      <section class="section today-menu">
+        <div class="today-feature">
+          <p class="section-kicker">Menu de hoy</p>
+          <h2>Hoy: Chuleta hawaiana</h2>
+          <p>Tambien hay desayunos, antojitos y comida corrida con guarniciones.</p>
+        </div>
+        <div class="today-list">
+          <article>
+            <span>Desayunos</span>
+            <p>Chilaquiles rojos o verdes, huevos rancheros, huevos al gusto, tulancinguenas, molletes, sopes y huaraches.</p>
+          </article>
+          <article>
+            <span>Comida</span>
+            <p>Empanizado, fajitas de pollo, enchiladas, bistec encebollado, tacos dorados, chilaquiles y torta de chilaquiles.</p>
+          </article>
+          <article>
+            <span>Guisos</span>
+            <p>Pollo a la plancha, pollo deshebrado, carne asada, chorizo y quesillo para sopes, quesadillas y huaraches.</p>
+          </article>
         </div>
       </section>
 
-      <section class="section strip">
+      <section class="section review-panel">
         <div>
-          <p class="section-kicker">Base lista</p>
-          <h2>Catalogo, carrito, detalle y pedido en una sola experiencia.</h2>
+          <p class="section-kicker">Lo que dicen los clientes</p>
+          <h2>Deliciosa, autentica y casera.</h2>
         </div>
-        <a class="button secondary" href="tienda.html">Comenzar pedido</a>
+        <p>Destacan el sazón, las porciones generosas, los buenos precios y un ambiente limpio y agradable.</p>
+      </section>
+
+      <section class="section home-location" id="ubicacion">
+        <div>
+          <p class="section-kicker">Ubicacion del local</p>
+          <h2>Fonda Mexicana</h2>
+          <p>C. 37D 12, Las Aguilas, 97050 Merida, Yuc.</p>
+          <p>Telefono: 999 644 8579</p>
+          <p class="store-hours">Horario: lunes a viernes de 8:00 am a 4:00 pm.</p>
+          <div class="location-actions">
+            <a class="button primary" href="https://www.google.com/maps/dir/?api=1&destination=20.999769979845297,-89.62416438649322&travelmode=driving" target="_blank" rel="noopener">Como llegar</a>
+          </div>
+        </div>
+        <div class="home-map">
+          <iframe
+            title="Ubicacion de Fonda Mexicana"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4806.376132477655!2d-89.6237515!3d20.9998412!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8f56777acdba081f%3A0xd4955bfee08a7765!2sFonda%20Mexicana!5e1!3m2!1ses!2smx!4v1790699387729!5m2!1ses!2smx"
+            width="600"
+            height="450"
+            style="border:0"
+            allowfullscreen=""
+            loading="lazy"
+            referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        </div>
       </section>
     </main>
 
