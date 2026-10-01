@@ -947,6 +947,16 @@ textarea:focus {
   padding: 9px;
 }
 
+.cart-item.is-unavailable {
+  border-color: rgba(180, 58, 58, 0.48);
+  background: rgba(180, 58, 58, 0.05);
+}
+
+.cart-unavailable-note {
+  color: #a12f2f !important;
+  font-weight: 800;
+}
+
 .cart-item img {
   aspect-ratio: 1;
   object-fit: cover;

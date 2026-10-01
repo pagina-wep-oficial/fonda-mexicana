@@ -323,6 +323,12 @@ const catalogState = {
   configLoaded: false
 };
 
+const cartQuoteState = {
+  items: new Map(),
+  revision: "",
+  inFlight: null
+};
+
 let catalogSearchTimer = null;
 let catalogRequestController = null;
 let catalogSlotObserver = null;
@@ -455,18 +461,205 @@ function setHistory(history) {
 }
 
 function getProduct(id) {
-  return products.find((product) => product.id === id);
+  const catalogProduct = products.find(
+    (product) => product.id === id
+  );
+
+  const quotedProduct = cartQuoteState.items.get(id);
+
+  if (!quotedProduct) {
+    return catalogProduct;
+  }
+
+  return {
+    ...(catalogProduct || {}),
+    ...quotedProduct,
+    id
+  };
 }
 
 function cartItems() {
   const cart = getCart();
+
   return Object.entries(cart)
-    .map(([id, quantity]) => ({ product: getProduct(id), quantity }))
+    .map(([id, quantity]) => ({
+      product: getProduct(id),
+      quantity
+    }))
     .filter((item) => item.product && item.quantity > 0);
 }
 
 function cartTotal(items = cartItems()) {
-  return items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  return items
+    .filter((item) => item.product.cart_quote_available !== false)
+    .reduce(
+      (sum, item) => sum + item.product.price * item.quantity,
+      0
+    );
+}
+function cartQuotePayload() {
+  return {
+    items: Object.entries(getCart()).map(([product_id, quantity]) => ({
+      product_id,
+      quantity: Math.max(1, Number(quantity) || 1)
+    }))
+  };
+}
+
+function quotedCartProduct(line) {
+  return {
+    id: line.product_id,
+    name: line.name || "Producto",
+    price: Number(line.unit_price) || 0,
+    currency: line.currency || "MXN",
+    inventory_enabled: line.inventory_enabled === true,
+    available_quantity:
+      line.inventory_enabled === true
+        ? Math.max(0, Number(line.stock_available) || 0)
+        : 0,
+    payment_methods: line.payment_method
+      ? [line.payment_method]
+      : [],
+    default_payment_method: line.payment_method || "whatsapp",
+    cart_quote_available: line.available === true,
+    cart_quote_reason: line.reason || "",
+    cart_quote_version: line.version || ""
+  };
+}
+
+function applyCartQuote(quote, { quiet = true } = {}) {
+  if (!quote || !Array.isArray(quote.items)) {
+    return false;
+  }
+
+  const cart = getCart();
+  const previousQuoteItems = cartQuoteState.items;
+  const nextQuoteItems = new Map();
+  const notices = [];
+  let cartChanged = false;
+
+  for (const line of quote.items) {
+    if (!line?.product_id) continue;
+
+    const previousProduct =
+      previousQuoteItems.get(line.product_id) ||
+      products.find((product) => product.id === line.product_id);
+
+    const nextProduct = quotedCartProduct(line);
+
+    nextQuoteItems.set(line.product_id, nextProduct);
+
+    if (
+      previousProduct &&
+      Number(previousProduct.price) !== Number(nextProduct.price)
+    ) {
+      notices.push(
+        `Actualizamos el precio de ${nextProduct.name}.`
+      );
+    }
+
+    if (line.available !== true) {
+      notices.push(
+        `${nextProduct.name} ya no está disponible.`
+      );
+      continue;
+    }
+
+    if (
+      line.quantity_adjusted === true &&
+      Number(cart[line.product_id]) !== Number(line.quantity)
+    ) {
+      cart[line.product_id] = Number(line.quantity);
+      cartChanged = true;
+
+      notices.push(
+        `Ajustamos la cantidad de ${nextProduct.name} a ${line.quantity}.`
+      );
+    }
+  }
+
+  cartQuoteState.items = nextQuoteItems;
+  cartQuoteState.revision = String(quote.revision || "");
+
+  if (cartChanged) {
+    setCart(cart);
+  }
+
+  renderCart();
+
+  if (!quiet && notices.length) {
+    showToast(notices[0]);
+  }
+
+  return true;
+}
+
+async function requestCartQuote({ quiet = true } = {}) {
+  const payload = cartQuotePayload();
+
+  if (!payload.items.length) {
+    cartQuoteState.items = new Map();
+    cartQuoteState.revision = "";
+    return null;
+  }
+
+  if (cartQuoteState.inFlight) {
+    return cartQuoteState.inFlight;
+  }
+
+  const request = (async () => {
+    try {
+      const response = await fetch(
+        `${ITM_ORDERS_URL}&quote=1`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const body = await response.json().catch(() => ({}));
+
+      if (
+        !response.ok ||
+        body?.ok !== true ||
+        !body?.quote
+      ) {
+        throw new Error(
+          body?.code || `QUOTE_HTTP_${response.status}`
+        );
+      }
+
+      applyCartQuote(body.quote, { quiet });
+
+      return body.quote;
+    } catch (error) {
+      if (!quiet) {
+        throw error;
+      }
+
+      console.warn(
+        "No se pudo actualizar el carrito desde el servidor:",
+        error
+      );
+
+      return null;
+    }
+  })();
+
+  cartQuoteState.inFlight = request;
+
+  try {
+    return await request;
+  } finally {
+    if (cartQuoteState.inFlight === request) {
+      cartQuoteState.inFlight = null;
+    }
+  }
 }
 
 function productPaymentMethods(product) {
@@ -1616,31 +1809,51 @@ function renderCart() {
   }
 
   holder.innerHTML = items
-    .map(({ product, quantity }) => `
-      <article class="cart-item">
-        <img src="${product.image_url || GENERIC_IMAGE}" alt="${product.name}">
-        <div class="cart-item-main">
-          <h2>${product.name}</h2>
-          <p>${money(product.price)}${productUnitText(product) ? ` ${productUnitText(product)}` : ""}</p>
+    .map(({ product, quantity }) => {
+      const unavailable =
+        product.cart_quote_available === false;
 
-          <a
-            class="button secondary cart-product-link"
-            href="detalle.html?id=${encodeURIComponent(product.id)}"
-          >
-            Ver producto
-          </a>
-        </div>
-        <div class="cart-item-controls">
-          <div class="quantity compact" aria-label="Cantidad de ${product.name}">
-            <button type="button" data-minus="${product.id}" aria-label="Quitar uno">-</button>
-            <span>${quantity}</span>
-            <button type="button" data-plus="${product.id}" aria-label="Agregar uno">+</button>
+      const unavailableMessage =
+        product.cart_quote_reason === "OUT_OF_STOCK"
+          ? "Agotado temporalmente"
+          : "Este producto ya no está disponible";
+
+      return `
+        <article class="cart-item${unavailable ? " is-unavailable" : ""}">
+          <img src="${product.image_url || GENERIC_IMAGE}" alt="${product.name}">
+          <div class="cart-item-main">
+            <h2>${product.name}</h2>
+            <p>${money(product.price)}${productUnitText(product) ? ` ${productUnitText(product)}` : ""}</p>
+            ${unavailable ? `
+              <p class="cart-unavailable-note" role="status">
+                ${unavailableMessage}
+              </p>
+            ` : ""}
+
+            <a
+              class="button secondary cart-product-link"
+              href="detalle.html?id=${encodeURIComponent(product.id)}"
+            >
+              Ver producto
+            </a>
           </div>
-          <strong>${money(product.price * quantity)}</strong>
-          <button class="remove-icon" type="button" data-remove="${product.id}" aria-label="Quitar ${product.name}">Quitar</button>
-        </div>
-      </article>
-    `)
+          <div class="cart-item-controls">
+            <div class="quantity compact" aria-label="Cantidad de ${product.name}">
+              <button type="button" data-minus="${product.id}" aria-label="Quitar uno">-</button>
+              <span>${quantity}</span>
+              <button
+                type="button"
+                data-plus="${product.id}"
+                aria-label="Agregar uno"
+                ${unavailable ? "disabled" : ""}
+              >+</button>
+            </div>
+            <strong>${unavailable ? "No disponible" : money(product.price * quantity)}</strong>
+            <button class="remove-icon" type="button" data-remove="${product.id}" aria-label="Quitar ${product.name}">Quitar</button>
+          </div>
+        </article>
+      `;
+    })
     .join("");
 
   holder.querySelectorAll("[data-minus]").forEach((button) => {
@@ -2284,6 +2497,7 @@ async function initCustomerProfilePage() {
 
 async function initCart() {
   await loadCatalogProducts();
+  await requestCartQuote({ quiet: true });
   renderCart();
 
   document.getElementById("storeDirectionsLink").href =
@@ -2291,6 +2505,27 @@ async function initCart() {
   applyShippingMode();
   setLocationMethod(selectedLocationMethod);
   restoreCheckoutDraft();
+
+  const syncVisibleCart = () => {
+    if (document.visibilityState !== "visible") {
+      return;
+    }
+
+    void requestCartQuote({ quiet: false });
+  };
+
+  window.addEventListener("focus", syncVisibleCart);
+
+  document.addEventListener(
+    "visibilitychange",
+    syncVisibleCart
+  );
+
+  window.setInterval(() => {
+    if (document.visibilityState === "visible") {
+      void requestCartQuote({ quiet: false });
+    }
+  }, 30000);
 
   document.getElementById("clearCartBtn")?.addEventListener("click", () => {
     setCart({});
@@ -2393,10 +2628,22 @@ async function initCart() {
 
     const form = event.currentTarget;
     const submitButton = form.querySelector("button[type='submit']");
-    const items = cartItems();
+    let items = cartItems();
+    let checkoutQuoteRevision = "";
 
     if (!items.length) {
       showToast("Agrega productos antes de pedir");
+      return;
+    }
+
+    const unavailableItem = items.find(
+      (item) => item.product.cart_quote_available === false
+    );
+
+    if (unavailableItem) {
+      showToast(
+        `Quita ${unavailableItem.product.name} para continuar.`
+      );
       return;
     }
 
@@ -2482,6 +2729,38 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
       document.getElementById("whatsappLoading");
 
     try {
+      const revisionBeforeCheckout = cartQuoteState.revision;
+
+      const quote = await requestCartQuote({
+        quiet: false
+      });
+
+      items = cartItems();
+
+      if (!quote || quote.valid !== true) {
+        showToast(
+          "Actualizamos tu carrito. Revisa los cambios antes de confirmar."
+        );
+        return;
+      }
+
+      const currentPaymentMethod = cartPaymentMethod(items);
+
+      if (
+        quote.revision !== revisionBeforeCheckout ||
+        currentPaymentMethod !== paymentMethod
+      ) {
+        renderCheckoutPaymentOptions();
+
+        showToast(
+          "Actualizamos tu carrito. Revisa el total y confirma nuevamente."
+        );
+
+        return;
+      }
+
+      checkoutQuoteRevision = quote.revision;
+
       if (isCodePayment) {
         const orderResponse = await fetch(ITM_ORDERS_URL, {
           method: "POST",
@@ -2494,6 +2773,7 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
             customer_name: customerName,
             customer_phone: "",
             customer_note: locationText,
+            quote_revision: checkoutQuoteRevision,
             items: items.map(({ product, quantity }) => ({
               product_id: product.id,
               quantity
@@ -2644,10 +2924,22 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
         window.open(whatsappUrl, "_blank", "noopener");
       }
     } catch (error) {
-      showToast(
-        error?.message ||
-          "No se pudo completar el pedido."
-      );
+      const errorCode = String(error?.message || "");
+
+      if (errorCode === "CART_CHANGED") {
+        await requestCartQuote({
+          quiet: true
+        });
+
+        showToast(
+          "El catálogo cambió. Revisa tu carrito y confirma nuevamente."
+        );
+      } else {
+        showToast(
+          error?.message ||
+            "No se pudo completar el pedido."
+        );
+      }
     } finally {
       whatsappLoading?.classList.remove("show");
 
