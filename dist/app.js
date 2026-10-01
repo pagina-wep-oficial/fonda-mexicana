@@ -215,7 +215,12 @@ function handleStoreLiveMessage(raw) {
   if (!event || event.project_id !== ITM_PROJECT_ID) return;
 
   if (event.type === "store_settings_changed") {
-    scheduleStoreSettingsRefresh();
+    if (document.body.dataset.page === "tienda") {
+      scheduleLiveCatalogRefresh();
+    } else {
+      scheduleStoreSettingsRefresh();
+    }
+
     scheduleLiveCartQuote();
     return;
   }
@@ -224,6 +229,7 @@ function handleStoreLiveMessage(raw) {
     event.type === "catalog_changed" ||
     event.type === "inventory_changed"
   ) {
+    scheduleLiveCatalogRefresh();
     scheduleLiveCartQuote();
   }
 }
@@ -543,6 +549,7 @@ let catalogSearchTimer = null;
 let catalogRequestController = null;
 let catalogSlotObserver = null;
 let catalogPageObserver = null;
+let catalogLiveRefreshTimer = 0;
 let selectedLocationMethod = "address";
 let currentGpsLocation = "";
 let mapLocation = "";
@@ -777,7 +784,7 @@ function restoreCatalogScroll(saved) {
   window.scrollTo(0, saved.scroll_y);
 }
 
-async function restoreCatalogViewState() {
+async function restoreCatalogViewState(onInitialCatalogReady = null) {
   const saved = getCatalogViewState();
 
   if (saved) {
@@ -793,6 +800,14 @@ async function restoreCatalogViewState() {
 
   await loadCatalogProducts();
 
+  if (typeof onInitialCatalogReady === "function") {
+    onInitialCatalogReady();
+  }
+
+  await finishCatalogViewRestore(saved);
+}
+
+async function finishCatalogViewRestore(saved) {
   if (!saved) {
     return;
   }
@@ -812,6 +827,40 @@ async function restoreCatalogViewState() {
 
   restoreCatalogScroll(saved);
   clearCatalogViewState();
+}
+
+async function refreshCatalogKeepingView() {
+  if (document.body.dataset.page !== "tienda") {
+    return;
+  }
+
+  saveCatalogViewState();
+
+  const saved = getCatalogViewState();
+
+  await loadCatalogProducts({ reset: true });
+  await finishCatalogViewRestore(saved);
+}
+
+function scheduleLiveCatalogRefresh() {
+  if (document.body.dataset.page !== "tienda") {
+    return;
+  }
+
+  if (catalogLiveRefreshTimer) {
+    return;
+  }
+
+  catalogLiveRefreshTimer = window.setTimeout(() => {
+    catalogLiveRefreshTimer = 0;
+
+    if (catalogState.loading) {
+      scheduleLiveCatalogRefresh();
+      return;
+    }
+
+    void refreshCatalogKeepingView();
+  }, 350);
 }
 
 function getCart() {
@@ -2046,8 +2095,9 @@ async function initCatalog() {
     }
   });
 
-  await restoreCatalogViewState();
-  connectStoreLive();
+  await restoreCatalogViewState(() => {
+    connectStoreLive();
+  });
 }
 
 async function initDetail() {
