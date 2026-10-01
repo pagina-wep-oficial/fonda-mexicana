@@ -221,6 +221,7 @@ function handleStoreLiveMessage(raw) {
       scheduleStoreSettingsRefresh();
     }
 
+    scheduleLiveDetailRefresh();
     scheduleLiveCartQuote();
     return;
   }
@@ -230,6 +231,7 @@ function handleStoreLiveMessage(raw) {
     event.type === "inventory_changed"
   ) {
     scheduleLiveCatalogRefresh();
+    scheduleLiveDetailRefresh(event);
     scheduleLiveCartQuote();
   }
 }
@@ -550,6 +552,7 @@ let catalogRequestController = null;
 let catalogSlotObserver = null;
 let catalogPageObserver = null;
 let catalogLiveRefreshTimer = 0;
+let detailLiveRefreshTimer = 0;
 let selectedLocationMethod = "address";
 let currentGpsLocation = "";
 let mapLocation = "";
@@ -2100,7 +2103,7 @@ async function initCatalog() {
   });
 }
 
-async function initDetail() {
+async function initDetail({ preferredQuantity = null } = {}) {
   const holder = document.getElementById("detailView");
   if (!holder) return;
 
@@ -2110,6 +2113,8 @@ async function initDetail() {
     reset: true,
     productId: id
   });
+
+  connectStoreLive();
 
   const product = getProduct(id);
 
@@ -2132,6 +2137,22 @@ async function initDetail() {
     product.inventory_enabled
       ? Math.max(1, product.available_quantity)
       : "";
+
+  const requestedQuantity = Number.parseInt(
+    preferredQuantity,
+    10
+  );
+
+  const safeRequestedQuantity =
+    Number.isFinite(requestedQuantity) && requestedQuantity > 0
+      ? requestedQuantity
+      : 1;
+
+  const initialDetailQuantity = detailOutOfStock
+    ? 1
+    : detailMaxQuantity
+      ? Math.min(safeRequestedQuantity, detailMaxQuantity)
+      : safeRequestedQuantity;
 
   const detailPayment = productPaymentLabel(product);
 
@@ -2175,7 +2196,7 @@ async function initDetail() {
             type="number"
             min="1"
             step="1"
-            value="1"
+            value="${initialDetailQuantity}"
             inputmode="numeric"
             ${detailMaxQuantity ? `max="${detailMaxQuantity}"` : ""}
             ${detailOutOfStock ? "disabled" : ""}
@@ -2226,6 +2247,55 @@ async function initDetail() {
     addToCart(product.id, normalizeQuantity());
     quantityInput.value = 1;
   });
+}
+
+function currentDetailProductId() {
+  return String(
+    new URLSearchParams(window.location.search).get("id") || ""
+  ).trim();
+}
+
+function scheduleLiveDetailRefresh(event = null) {
+  if (document.body.dataset.page !== "detalle") {
+    return;
+  }
+
+  const productId = currentDetailProductId();
+
+  if (!productId) {
+    return;
+  }
+
+  const affectedIds = Array.isArray(event?.product_ids)
+    ? event.product_ids.map((id) => String(id))
+    : [];
+
+  if (
+    affectedIds.length &&
+    !affectedIds.includes(productId)
+  ) {
+    return;
+  }
+
+  if (detailLiveRefreshTimer) {
+    return;
+  }
+
+  detailLiveRefreshTimer = window.setTimeout(() => {
+    detailLiveRefreshTimer = 0;
+
+    const currentQuantity = Number.parseInt(
+      document.getElementById("detailQuantity")?.value,
+      10
+    );
+
+    void initDetail({
+      preferredQuantity:
+        Number.isFinite(currentQuantity) && currentQuantity > 0
+          ? currentQuantity
+          : 1
+    });
+  }, 350);
 }
 
 function renderCart() {
