@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi perfil | Fonda Mexicana</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="perfil">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Inicio">
+      <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="">
+      <span>Fonda Mexicana</span>
+    </a>
+
+    <nav class="nav" aria-label="Principal">
+      <a href="tienda.html">Hacer pedido</a>
+      <a class="cart-link" href="carrito.html">
+        Carrito <span data-cart-count>0</span>
+      </a>
+      <a href="mis-pedidos.html">Mis pedidos</a>
+    </nav>
+  </header>
+
+  <main class="section">
+    <div class="page-title">
+      <div>
+        <p class="section-kicker">Cuenta del cliente</p>
+        <h1>Mi perfil</h1>
+      </div>
+    </div>
+
+    <section class="panel customer-account" id="customer-account">
+      <h2>Datos para tus pedidos</h2>
+
+      <p class="muted" id="customer-account-status">
+        Abre el icono de perfil para iniciar sesión y editar tus datos.
+      </p>
+
+      <form id="customer-profile-form">
+        <label>
+          <span>Nombre</span>
+          <input id="customerName" type="text" required>
+        </label>
+
+        <label>
+          <span>WhatsApp</span>
+          <input id="customerPhone" type="tel">
+        </label>
+
+        <label>
+          <span>Dirección habitual</span>
+          <textarea id="manualLocation" rows="3"></textarea>
+        </label>
+
+        <label>
+          <span>Referencia</span>
+          <textarea id="customerReference" rows="2"></textarea>
+        </label>
+
+        <button class="button primary" id="save-customer-profile-btn" type="submit" hidden>
+          Guardar mis datos
+        </button>
+      </form>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

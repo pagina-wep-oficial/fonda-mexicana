@@ -1,10 +1,88 @@
-const WHATSAPP_NUMBER = "5219996448579";
+let activeWhatsappNumber = "";
+let storeMode = "whatsapp_catalog";
+let enabledPaymentMethods = ["whatsapp"];
+let defaultPaymentMethod = "whatsapp";
 const GENERIC_IMAGE = "assets/producto-generico.svg";
 const CART_KEY = "tiendaPedidosCarrito";
 const HISTORY_KEY = "tiendaPedidosHistorial";
 const CHECKOUT_DRAFT_KEY = "tiendaPedidosDatosCarrito";
 const ORDER_SEQ_KEY = "tiendaPedidosSecuencia";
 const ORDER_SEQ_START = 1000;
+
+const ITM_PROJECT_ID = "096b6e30-cc77-4fa2-bd2f-1e2696d742f2";
+const ITM_PRODUCTS_URL =
+  `https://itm-void-excepcional.pages.dev/api/store-products?project_id=${encodeURIComponent(ITM_PROJECT_ID)}&public=1`;
+const ITM_ORDERS_URL =
+  `https://itm-void-excepcional.pages.dev/api/store-orders?project_id=${encodeURIComponent(ITM_PROJECT_ID)}&public=1`;
+const ITM_PROFILE_URL =
+  `https://itm-void-excepcional.pages.dev/api/store-customer-profile?project_id=${encodeURIComponent(ITM_PROJECT_ID)}`;
+const STORE_CONFIG_URL = "/store-config.json";
+
+function applyStorePaymentSettings(settings = {}) {
+  storeMode =
+    settings.store_mode === "managed_orders"
+      ? "managed_orders"
+      : "whatsapp_catalog";
+
+  const configuredMethods = Array.isArray(settings.enabled_payment_methods)
+    ? settings.enabled_payment_methods.filter(
+        (method) => method === "whatsapp" || method === "code"
+      )
+    : [];
+
+  enabledPaymentMethods =
+    storeMode === "whatsapp_catalog"
+      ? ["whatsapp"]
+      : configuredMethods.length
+        ? [...new Set(configuredMethods)]
+        : ["whatsapp"];
+
+  defaultPaymentMethod = enabledPaymentMethods.includes(
+    settings.default_payment_method
+  )
+    ? settings.default_payment_method
+    : enabledPaymentMethods[0];
+}
+
+let customerSession = null;
+let customerProfile = null;
+let profileIdentityLoading = false;
+let profileIdentityRequest = null;
+
+async function loadStaticStoreConfig() {
+  try {
+    const response = await fetch(`${STORE_CONFIG_URL}?v=${Date.now()}`, {
+      headers: {
+        Accept: "application/json"
+      },
+      cache: "no-store"
+    });
+
+    const body = await response.json().catch(() => ({}));
+
+    if (
+      !response.ok ||
+      body?.project_id !== ITM_PROJECT_ID
+    ) {
+      throw new Error("STORE_CONFIG_INVALID");
+    }
+
+    const configuredPhone = String(body.whatsapp_number || "")
+      .replace(/\D/g, "");
+
+    activeWhatsappNumber = configuredPhone.startsWith("52")
+      ? configuredPhone
+      : configuredPhone
+        ? `52${configuredPhone}`
+        : "";
+  } catch (error) {
+    activeWhatsappNumber = "";
+    console.error(
+      "No se pudo cargar la configuracion estatica de la tienda:",
+      error
+    );
+  }
+}
 
 const ORDER_FLOWS = {
   pickup: [
@@ -44,7 +122,7 @@ const MAP_STYLES = {
   }
 };
 
-const products = [
+let products = [
   {
     id: "tacos-dorados",
     name: "Tacos dorados",
@@ -234,6 +312,21 @@ const STORE_LOCATION = {
 };
 
 let activeCategory = "Todos";
+
+const catalogState = {
+  items: [],
+  categories: ["Todos"],
+  nextOffset: 0,
+  hasMore: true,
+  loading: false,
+  query: "",
+  configLoaded: false
+};
+
+let catalogSearchTimer = null;
+let catalogRequestController = null;
+let catalogSlotObserver = null;
+let catalogPageObserver = null;
 let selectedLocationMethod = "address";
 let currentGpsLocation = "";
 let mapLocation = "";
@@ -376,6 +469,110 @@ function cartTotal(items = cartItems()) {
   return items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 }
 
+function productPaymentMethods(product) {
+  if (storeMode === "whatsapp_catalog") {
+    return ["whatsapp"];
+  }
+
+  const methods =
+    Array.isArray(product?.payment_methods) &&
+    product.payment_methods.length
+      ? product.payment_methods
+      : [defaultPaymentMethod];
+
+  const allowedMethods = methods.filter((method) =>
+    enabledPaymentMethods.includes(method)
+  );
+
+  return allowedMethods.length
+    ? [...new Set(allowedMethods)]
+    : [defaultPaymentMethod];
+}
+
+function productPrimaryPaymentMethod(product) {
+  const methods = productPaymentMethods(product);
+
+  if (
+    methods.includes(product?.default_payment_method) &&
+    enabledPaymentMethods.includes(product.default_payment_method)
+  ) {
+    return product.default_payment_method;
+  }
+
+  if (methods.includes(defaultPaymentMethod)) {
+    return defaultPaymentMethod;
+  }
+
+  return methods[0] || defaultPaymentMethod || "whatsapp";
+}
+
+function cartPaymentMethod(items = cartItems()) {
+  if (storeMode === "whatsapp_catalog") {
+    return "whatsapp";
+  }
+
+  if (!items.length) {
+    return defaultPaymentMethod || "whatsapp";
+  }
+
+  return productPrimaryPaymentMethod(items[0].product);
+}
+
+function cartPaymentMethods(items = cartItems()) {
+  return [cartPaymentMethod(items)];
+}
+
+function renderCheckoutPaymentOptions() {
+  const form = document.getElementById("checkoutForm");
+  if (!form) return;
+
+  const codeOption = document.getElementById("code-payment-option");
+  const codePanel = document.getElementById("payment-code-panel");
+  const submitButton = document.getElementById("checkoutSubmitButton");
+
+  const cartMethod = cartPaymentMethod();
+  const codeAllowed =
+    storeMode === "managed_orders" &&
+    cartMethod === "code";
+
+  const whatsappAllowed = cartMethod === "whatsapp";
+
+  const whatsappInput = form.querySelector(
+    "input[name='paymentMethod'][value='whatsapp']"
+  );
+
+  const codeInput = form.querySelector(
+    "input[name='paymentMethod'][value='code']"
+  );
+
+  const whatsappOption = whatsappInput?.closest(".radio-row");
+
+  if (whatsappOption) {
+    whatsappOption.hidden = !whatsappAllowed;
+  }
+
+  if (codeOption) {
+    codeOption.hidden = !codeAllowed;
+  }
+
+  if (codeAllowed && codeInput) {
+    codeInput.checked = true;
+  }
+
+  if (whatsappAllowed && whatsappInput) {
+    whatsappInput.checked = true;
+  }
+
+  if (codePanel) {
+    codePanel.hidden = !codeAllowed;
+  }
+
+  if (submitButton) {
+    submitButton.textContent = codeAllowed
+      ? "Confirmar con código"
+      : "Hacer pedido por WhatsApp";
+  }
+}
 function orderStatus(order) {
   const rawStatus = LEGACY_STATUS_MAP[order.status] || order.status || "nuevo";
   if (order.shippingType === "Pasar a buscar" && !ORDER_FLOWS.pickup.some((entry) => entry.id === rawStatus)) {
@@ -446,12 +643,25 @@ function advanceOrder(id) {
 }
 
 function cartCount() {
-  return cartItems().reduce((sum, item) => sum + item.quantity, 0);
+  return Object.values(getCart()).reduce(
+    (sum, quantity) => sum + Math.max(0, Number(quantity) || 0),
+    0
+  );
 }
 
 function updateCartCount() {
+  const count = String(cartCount());
+
   document.querySelectorAll("[data-cart-count]").forEach((node) => {
-    node.textContent = cartCount();
+    const changed = node.textContent !== count;
+
+    node.textContent = count;
+
+    if (changed) {
+      node.classList.remove("cart-count-bump");
+      void node.offsetWidth;
+      node.classList.add("cart-count-bump");
+    }
   });
 }
 
@@ -466,15 +676,271 @@ function appNavIcon(name) {
 
 const INTERNAL_PAGES = ["panel-local", "login", "admin", "panel-pedidos", "repartidor"];
 
+function profileInitials(name){
+  const value=String(name||"").trim();
+
+  if(!value)return "";
+
+  const parts=value.split(/\s+/).filter(Boolean);
+
+  if(parts.length>1){
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return value.slice(0,2).toUpperCase();
+}
+
+function profileAvatarMarkup(initials, loggedIn){
+  if(loggedIn)return initials;
+
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4"></circle><path d="M5.5 19c.8-3.2 3-4.8 6.5-4.8s5.7 1.6 6.5 4.8"></path></svg>';
+}
+
+function profileName(){
+  return String(
+    customerProfile?.display_name ||
+    customerSession?.user?.displayName ||
+    ""
+  ).trim();
+}
+
+function renderProfileMenu(){
+  const button=document.querySelector("[data-profile-corner]");
+  const overlay=document.querySelector("[data-profile-overlay]");
+if(!button||!overlay)return;
+
+overlay.classList.toggle("is-loading", profileIdentityLoading);
+
+const loggedIn=Boolean(
+    customerSession?.user &&
+    customerSession?.idToken
+  );
+
+  const avatar=button.querySelector("[data-profile-avatar]");
+  const menuAvatar=overlay.querySelector("[data-profile-menu-avatar]");
+  const menuName=overlay.querySelector("[data-profile-name]");
+  const menuEmail=overlay.querySelector("[data-profile-email]");
+  const message=overlay.querySelector("[data-profile-message]");
+  const status=overlay.querySelector("[data-profile-status]");
+  const loginButton=overlay.querySelector("[data-profile-login]");
+  const profileLink=overlay.querySelector("[data-profile-config]");
+  const ordersLink=overlay.querySelector("[data-profile-orders]");
+  const logoutButton=overlay.querySelector("[data-profile-logout]");
+
+if(profileIdentityLoading){
+  if(menuName)menuName.textContent="Cargando perfil...";
+  if(menuEmail)menuEmail.textContent="";
+  if(message)message.textContent="Cargando tus datos...";
+  if(status)status.textContent="Espera un momento";
+  if(loginButton)loginButton.hidden=true;
+  if(profileLink)profileLink.hidden=true;
+  if(ordersLink)ordersLink.hidden=true;
+  if(logoutButton)logoutButton.hidden=true;
+  return;
+}
+
+  const name=profileName();
+  const initials=profileInitials(name);
+  const avatarMarkup=profileAvatarMarkup(initials, loggedIn);
+
+  if(avatar)avatar.innerHTML=avatarMarkup;
+  if(menuAvatar)menuAvatar.innerHTML=avatarMarkup;
+
+  if(menuName){
+    menuName.textContent=loggedIn
+      ? name||"Cliente"
+      : "Iniciar sesión";
+  }
+
+  if(menuEmail){
+    menuEmail.textContent=loggedIn
+      ? customerSession.user.email||""
+      : "";
+  }
+
+  if(message){
+    message.textContent=loggedIn
+      ? "Administra tus datos y consulta tus pedidos."
+      : "Inicia sesión para guardar tus datos y facilitar tus pedidos.";
+  }
+
+  if(loginButton)loginButton.hidden=loggedIn;
+  if(profileLink)profileLink.hidden=!loggedIn;
+  if(ordersLink)ordersLink.hidden=!loggedIn;
+  if(logoutButton)logoutButton.hidden=!loggedIn;
+}
+
+async function loadProfileIdentity(){
+  if (profileIdentityRequest) return profileIdentityRequest;
+
+  profileIdentityRequest = (async () => {
+    profileIdentityLoading = true;
+    renderProfileMenu();
+
+    try {
+      const auth = await ensureCustomerAuth();
+      customerSession = await auth.getSession();
+      customerProfile = null;
+
+      if (!customerSession?.idToken) return;
+
+      try {
+        const response = await fetch(ITM_PROFILE_URL, {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${customerSession.idToken}`
+          }
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (response.ok && result?.ok === true) {
+          customerProfile = result.profile || null;
+        } else {
+          console.warn("No se pudo cargar el perfil del cliente.", result);
+        }
+      } catch (error) {
+        console.warn("No se pudo cargar el perfil del cliente.", error);
+      }
+    } catch (error) {
+      customerSession = null;
+      customerProfile = null;
+      console.warn("No se pudo restaurar la sesión del cliente.", error);
+    } finally {
+      profileIdentityLoading = false;
+      renderProfileMenu();
+    }
+  })();
+
+  try {
+    await profileIdentityRequest;
+  } finally {
+    profileIdentityRequest = null;
+  }
+}
+
+function initProfileMenu(){
+  const button=document.querySelector("[data-profile-corner]");
+  if(!button||document.querySelector("[data-profile-overlay]"))return;
+
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    `<div class="profile-overlay" data-profile-overlay hidden>
+      <div class="profile-popover" role="dialog" aria-modal="true" aria-labelledby="profile-popover-title">
+        <button class="profile-close" type="button" data-profile-close aria-label="Cerrar">×</button>
+
+        <div class="profile-identity">
+          <span class="profile-menu-avatar" data-profile-menu-avatar>?</span>
+          <div>
+            <strong id="profile-popover-title" data-profile-name>Iniciar sesión</strong>
+            <small data-profile-email></small>
+          </div>
+        </div>
+
+        <p class="profile-message" data-profile-message>
+          Inicia sesión para guardar tus datos y facilitar tus pedidos.
+        </p>
+
+        <div class="profile-actions">
+          <button class="button primary" type="button" data-profile-login>
+            Iniciar sesión con Google
+          </button>
+
+          <a class="button secondary" href="perfil-de-usuario.html" data-profile-config hidden>
+            Configurar perfil
+          </a>
+
+          <a class="button secondary" href="mis-pedidos.html" data-profile-orders hidden>
+            Mis pedidos
+          </a>
+
+          <button class="button light" type="button" data-profile-logout hidden>
+            Cerrar sesión
+          </button>
+        </div>
+
+        <p class="profile-status" data-profile-status></p>
+      </div>
+    </div>`
+  );
+
+  const overlay=document.querySelector("[data-profile-overlay]");
+  const close=()=>{overlay.hidden=true};
+
+button.addEventListener("click",async()=>{
+  profileIdentityLoading=true;
+  overlay.hidden=false;
+  renderProfileMenu();
+  await loadProfileIdentity();
+});
+
+  overlay.querySelector("[data-profile-close]")?.addEventListener("click",close);
+
+  overlay.addEventListener("click",event=>{
+    if(event.target===overlay)close();
+  });
+
+  document.addEventListener("keydown",event=>{
+    if(event.key==="Escape"&&!overlay.hidden)close();
+  });
+
+  overlay.querySelector("[data-profile-login]")?.addEventListener("click",async()=>{
+    const status=overlay.querySelector("[data-profile-status]");
+    const auth=await ensureCustomerAuth();
+
+    try{
+      if(status)status.textContent="Abriendo inicio de sesión...";
+      await auth.signInWithGoogle();
+      await loadProfileIdentity();
+      if(status)status.textContent="Sesión iniciada.";
+    }catch(error){
+      if(status)status.textContent="No se pudo iniciar sesión.";
+    }
+  });
+
+  overlay.querySelector("[data-profile-logout]")?.addEventListener("click",async()=>{
+    await logoutCustomer();
+    close();
+    renderProfileMenu();
+  });
+
+  renderProfileMenu();
+  void loadProfileIdentity();
+}
+
 function initAppNavigation() {
   if (document.querySelector(".app-nav")) return;
+
   const page = document.body.dataset.page;
-  if (!page || page === "inicio" || INTERNAL_PAGES.includes(page)) return;
-  const activePage = page === "carrito" || page === "mis-pedidos" ? page : "tienda";
+  if (!page || INTERNAL_PAGES.includes(page)) return;
+
+  const topbar = document.querySelector(".topbar");
+
+  if (topbar && !topbar.querySelector("[data-profile-corner]")) {
+    const profileActive = page === "perfil" ? " active" : "";
+
+    topbar.insertAdjacentHTML(
+      "beforeend",
+      `<button class="profile-corner${profileActive}" data-profile-corner type="button" aria-label="Abrir perfil">
+        <span class="profile-avatar" data-profile-avatar aria-hidden="true"></span>
+      </button>`
+    );
+  }
+
+  if (page === "inicio") {
+    initProfileMenu();
+    return;
+  }
+
+  const activePage =
+    page === "carrito" || page === "mis-pedidos"
+      ? page
+      : "tienda";
+
   const links = [
     { id: "tienda", label: "Pedir", href: "tienda.html", icon: "tienda" },
     { id: "carrito", label: "Carrito", href: "carrito.html", icon: "carrito", badge: true },
-    { id: "mis-pedidos", label: "En curso", href: "mis-pedidos.html", icon: "pedidos" }
+    { id: "mis-pedidos", label: "Mis pedidos", href: "mis-pedidos.html", icon: "pedidos" }
   ];
 
   document.body.insertAdjacentHTML(
@@ -488,6 +954,8 @@ function initAppNavigation() {
       `).join("")}
     </nav>`
   );
+
+  initProfileMenu();
 }
 
 function showToast(message) {
@@ -501,19 +969,74 @@ function showToast(message) {
 
 function addToCart(id, quantity = 1) {
   const cart = getCart();
-  cart[id] = (cart[id] || 0) + quantity;
-  setCart(cart);
   const product = getProduct(id);
+
+  if (!product) return;
+
+  const currentItems = cartItems();
+  const productMethod = productPrimaryPaymentMethod(product);
+  const cartMethod = currentItems.length
+    ? cartPaymentMethod(currentItems)
+    : productMethod;
+
+  if (currentItems.length && productMethod !== cartMethod) {
+    showToast("Este producto usa otro método de compra. Termina o vacía tu carrito para agregarlo.");
+    return;
+  }
+
+  const currentQuantity = Math.max(0, Number(cart[id]) || 0);
+  let nextQuantity = Math.max(1, Number(quantity) || 1);
+
+  if (product.inventory_enabled) {
+    const available = Math.max(0, Number(product.available_quantity) || 0);
+
+    if (available <= 0) {
+      showToast("Producto agotado");
+      return;
+    }
+
+    if (currentQuantity >= available) {
+      showToast(`Solo hay ${available} disponibles`);
+      return;
+    }
+
+    nextQuantity = Math.min(nextQuantity, available - currentQuantity);
+  }
+
+  cart[id] = currentQuantity + nextQuantity;
+  setCart(cart);
+
   showToast(`${product.name} agregado al carrito`);
 }
 
 function setItemQuantity(id, quantity) {
   const cart = getCart();
-  if (quantity <= 0) {
+  const product = getProduct(id);
+  let nextQuantity = Math.max(0, Number(quantity) || 0);
+
+  if (product?.inventory_enabled) {
+    const available = Math.max(
+      0,
+      Number(product.available_quantity) || 0
+    );
+
+    if (available <= 0 && nextQuantity > 0) {
+      showToast("Ya no quedan unidades disponibles");
+      return;
+    }
+
+    if (nextQuantity > available) {
+      nextQuantity = available;
+      showToast(`Solo hay ${available} disponibles`);
+    }
+  }
+
+  if (nextQuantity <= 0) {
     delete cart[id];
   } else {
-    cart[id] = quantity;
+    cart[id] = nextQuantity;
   }
+
   setCart(cart);
   renderCart();
 }
@@ -526,100 +1049,528 @@ function removeFromCart(id) {
 }
 
 function categoryList() {
-  return ["Todos", ...new Set(products.map((product) => product.category))];
+  return [
+    ...new Set(
+      catalogState.categories?.length
+        ? catalogState.categories
+        : ["Todos", "Destacados"]
+    )
+  ];
 }
 
 function renderFilters() {
   const holder = document.getElementById("categoryFilters");
   if (!holder) return;
-  holder.innerHTML = categoryList()
-    .map((category) => `<button class="chip ${category === activeCategory ? "active" : ""}" type="button" data-category="${category}">${category}</button>`)
+
+  const categories = categoryList();
+
+  if (categories.length <= 1) {
+    holder.innerHTML = "";
+    holder.hidden = true;
+    return;
+  }
+
+  holder.hidden = false;
+
+  holder.innerHTML = categories
+    .map(
+      (category) =>
+        `<button class="chip ${category === activeCategory ? "active" : ""}" type="button" data-category="${category}">${category}</button>`
+    )
     .join("");
 
   holder.querySelectorAll("[data-category]").forEach((button) => {
     button.addEventListener("click", () => {
       activeCategory = button.dataset.category;
       renderFilters();
-      renderCatalog();
+      loadCatalogProducts({ reset: true });
     });
   });
 }
 
+function renderProductPrice(product) {
+  const currentPrice = Number(product.price) || 0;
+  const previousPrice = Number(product.compare_at_price) || 0;
+
+  if (previousPrice > currentPrice) {
+    return `
+      <span class="price">
+        <del>${money(previousPrice)}</del>
+        ${money(currentPrice)}
+      </span>
+    `;
+  }
+
+  return `<span class="price">${money(currentPrice)}</span>`;
+}
+
+function productUnitText(product) {
+  const unit = String(product.unit_label || "").trim();
+  return unit ? `por ${unit}` : "";
+}
+
+function productPaymentLabel(product) {
+  const method = productPrimaryPaymentMethod(product);
+
+  return method === "code"
+    ? {
+        id: "code",
+        label: "Pago con código de confirmación"
+      }
+    : {
+        id: "whatsapp",
+        label: "Pedido por WhatsApp"
+      };
+}
+
 function productCard(product) {
+  const outOfStock =
+    product.inventory_enabled &&
+    product.available_quantity <= 0;
+
+  const stockLabel = product.inventory_enabled
+    ? outOfStock
+      ? "Agotado"
+      : `Disponibles: ${product.available_quantity}`
+    : "";
+
+const featuredLabel = product.featured
+  ? `<span class="category">★ Destacado</span>`
+  : "";
+
+const payment = productPaymentLabel(product);
+
   return `
     <article class="product-card">
-      <img src="${GENERIC_IMAGE}" alt="${product.name}" loading="lazy">
+      <img src="${product.image_url || GENERIC_IMAGE}" alt="${product.name}" loading="lazy">
+
       <div class="product-body">
         <div class="product-meta">
           <span class="category">${product.category}</span>
-          <span class="price">${money(product.price)}</span>
+          ${renderProductPrice(product)}
+          ${productUnitText(product) ? `<small class="product-unit">${productUnitText(product)}</small>` : ""}
         </div>
+
+        ${featuredLabel}
+
         <h2>${product.name}</h2>
         <p>${product.description}</p>
-        <div class="product-actions">
-          <button class="button primary" type="button" data-add="${product.id}">Agregar</button>
-          <a class="button secondary" href="detalle.html?id=${product.id}">Ver detalles</a>
+${stockLabel ? `<p class="product-stock">${stockLabel}</p>` : ""}
+
+<p
+  class="product-payment-method"
+  data-payment-method="${payment.id}"
+>
+  ${payment.label}
+</p>
+
+<div class="product-actions">
+          <button
+            class="button primary"
+            type="button"
+            data-add="${product.id}"
+            ${outOfStock ? "disabled aria-disabled=\"true\"" : ""}
+          >
+            ${outOfStock ? "Agotado" : "Agregar"}
+          </button>
+
+          <a class="button secondary" href="detalle.html?id=${product.id}">
+            Ver detalles
+          </a>
         </div>
       </div>
     </article>
   `;
 }
 
+function hydrateCatalogSlot(slot) {
+  const index = Number(slot.dataset.catalogIndex);
+  const product = products[index];
+
+  if (!product || slot.dataset.hydrated === "true") {
+    return;
+  }
+
+  slot.innerHTML = productCard(product);
+  slot.dataset.hydrated = "true";
+
+  slot.querySelectorAll("[data-add]").forEach((button) => {
+    button.addEventListener("click", () => {
+      addToCart(button.dataset.add);
+    });
+  });
+}
+
+function setupVirtualCatalog() {
+  const grid = document.getElementById("productGrid");
+  if (!grid) return;
+
+  catalogSlotObserver?.disconnect();
+  catalogPageObserver?.disconnect();
+
+  catalogSlotObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        const slot = entry.target;
+
+        if (entry.isIntersecting) {
+          hydrateCatalogSlot(slot);
+          return;
+        }
+
+        const distance = Math.abs(
+          entry.boundingClientRect.top - window.innerHeight / 2
+        );
+
+        if (distance > 1400 && slot.dataset.hydrated === "true") {
+          slot.innerHTML = "";
+          delete slot.dataset.hydrated;
+        }
+      });
+    },
+    {
+      rootMargin: "800px 0px"
+    }
+  );
+
+  grid
+    .querySelectorAll("[data-catalog-slot]")
+    .forEach((slot) => {
+      catalogSlotObserver.observe(slot);
+    });
+
+  const sentinel = document.getElementById("catalog-sentinel");
+
+  if (sentinel) {
+    catalogPageObserver = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries.some((entry) => entry.isIntersecting) &&
+          catalogState.hasMore &&
+          !catalogState.loading
+        ) {
+          loadCatalogProducts({ reset: false });
+        }
+      },
+      {
+        rootMargin: "700px 0px"
+      }
+    );
+
+    catalogPageObserver.observe(sentinel);
+  }
+}
+
 function renderCatalog() {
   const grid = document.getElementById("productGrid");
   if (!grid) return;
-  const query = (document.getElementById("searchInput")?.value || "").trim().toLowerCase();
-  const filtered = products.filter((product) => {
-    const matchesCategory = activeCategory === "Todos" || product.category === activeCategory;
-    const matchesSearch = `${product.name} ${product.category} ${product.description}`.toLowerCase().includes(query);
-    return matchesCategory && matchesSearch;
-  });
 
-  grid.innerHTML = filtered.length
-    ? filtered.map(productCard).join("")
-    : `<div class="empty-state">No hay productos con ese filtro.</div>`;
+  if (!products.length) {
+    const emptyMessage = catalogState.query
+      ? "No hay productos que coincidan con tu búsqueda."
+      : activeCategory !== "Todos"
+        ? "No hay productos en este catálogo."
+        : "No hay productos disponibles.";
 
-  grid.querySelectorAll("[data-add]").forEach((button) => {
-    button.addEventListener("click", () => addToCart(button.dataset.add));
-  });
+    grid.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+    return;
+  }
+
+  grid.innerHTML = products
+    .map(
+      (_, index) => `
+        <div
+          class="catalog-slot"
+          data-catalog-slot
+          data-catalog-index="${index}"
+          aria-label="Producto"
+        ></div>
+      `
+    )
+    .join("");
+
+  if (catalogState.hasMore) {
+    grid.insertAdjacentHTML(
+      "beforeend",
+      `<div id="catalog-sentinel" class="catalog-sentinel">Cargando más productos...</div>`
+    );
+  }
+
+  setupVirtualCatalog();
+}
+
+async function loadCatalogProducts({ reset = true, productId = null } = {}) {
+  if (!reset && (!catalogState.hasMore || catalogState.loading)) {
+    return;
+  }
+
+  if (reset) {
+    catalogRequestController?.abort();
+    catalogState.items = [];
+    catalogState.nextOffset = 0;
+    catalogState.hasMore = true;
+
+    const grid = document.getElementById("productGrid");
+    if (grid) {
+      grid.innerHTML = `<div class="empty-state">Cargando productos...</div>`;
+    }
+  }
+
+  catalogState.loading = true;
+  catalogRequestController = new AbortController();
+
+  try {
+    if (!catalogState.configLoaded) {
+      await loadStaticStoreConfig();
+      catalogState.configLoaded = true;
+    }
+
+    const endpoint = new URL(ITM_PRODUCTS_URL);
+
+    endpoint.searchParams.set("limit", "24");
+    endpoint.searchParams.set(
+      "offset",
+      String(catalogState.nextOffset || 0)
+    );
+
+    if (productId) {
+      endpoint.searchParams.set("id", productId);
+    }
+
+    if (catalogState.query) {
+      endpoint.searchParams.set("q", catalogState.query);
+    }
+
+    if (activeCategory && activeCategory !== "Todos") {
+      endpoint.searchParams.set("category", activeCategory);
+    }
+
+    const response = await fetch(endpoint, {
+      headers: {
+        Accept: "application/json"
+      },
+      signal: catalogRequestController.signal
+    });
+
+    const body = await response.json();
+
+    if (
+      !response.ok ||
+      body?.ok !== true ||
+      !Array.isArray(body.products)
+    ) {
+      throw new Error(
+        body?.code || `CATALOG_HTTP_${response.status}`
+      );
+    }
+
+    applyStorePaymentSettings(body.settings || {});
+
+    const mappedProducts = body.products.map((product) => ({
+      id: String(product.id),
+      name: String(product.name || "Producto"),
+      category: String(product.category || "Otros"),
+      featured: product.featured === true,
+      price: Number(product.price) || 0,
+      compare_at_price: Number(product.compare_at_price) || 0,
+      unit_label: String(product.unit_label || "").trim(),
+      description: String(product.description || ""),
+      image_url: String(
+        product.image_url ||
+          product.media?.find(
+            (media) => media.media_type === "image"
+          )?.source_url ||
+          ""
+      ),
+      inventory_enabled: product.inventory_enabled === true,
+      stock_quantity: Number(product.stock_quantity) || 0,
+      reserved_quantity: Number(product.reserved_quantity) || 0,
+      available_quantity: Number(product.available_quantity) || 0,
+      payment_methods:
+        Array.isArray(product.payment_methods) &&
+        product.payment_methods.length
+          ? product.payment_methods
+          : [defaultPaymentMethod],
+      default_payment_method:
+        product.default_payment_method || defaultPaymentMethod
+    }));
+
+    catalogState.items = reset
+      ? mappedProducts
+      : [...catalogState.items, ...mappedProducts];
+
+    products = catalogState.items;
+
+    const serverCategories = Array.isArray(body.categories)
+      ? body.categories.filter(Boolean)
+      : [];
+
+    catalogState.categories = [
+      "Todos",
+      ...(body.has_featured ? ["Destacados"] : []),
+      ...new Set(
+        serverCategories.filter(
+          (category) =>
+            String(category).toLowerCase() !== "destacados"
+        )
+      )
+    ];
+
+    if (
+      activeCategory === "Destacados" &&
+      body.has_featured !== true
+    ) {
+      activeCategory = "Todos";
+    }
+
+    catalogState.nextOffset =
+      Number.isInteger(body.pagination?.next_offset)
+        ? body.pagination.next_offset
+        : null;
+
+    catalogState.hasMore =
+      body.pagination?.has_more === true;
+
+    renderFilters();
+    renderCatalog();
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      console.error(
+        "No se pudo cargar el catálogo ITM:",
+        error
+      );
+
+      const grid = document.getElementById("productGrid");
+
+      if (grid && reset) {
+        grid.innerHTML =
+          `<div class="empty-state">No se pudieron cargar los productos.</div>`;
+      }
+    }
+  } finally {
+    catalogState.loading = false;
+  }
 }
 
 function initCatalog() {
   renderFilters();
   renderCatalog();
-  document.getElementById("searchInput")?.addEventListener("input", renderCatalog);
+
+  document
+    .getElementById("searchInput")
+    ?.addEventListener("input", (event) => {
+      clearTimeout(catalogSearchTimer);
+
+      catalogSearchTimer = setTimeout(() => {
+        catalogState.query = event.target.value
+          .trim()
+          .toLowerCase();
+
+        loadCatalogProducts({ reset: true });
+      }, 250);
+    });
+
+  loadCatalogProducts();
 }
 
-function initDetail() {
+async function initDetail() {
   const holder = document.getElementById("detailView");
   if (!holder) return;
+
   const id = new URLSearchParams(window.location.search).get("id");
-  const product = getProduct(id) || products[0];
+
+  await loadCatalogProducts({
+    reset: true,
+    productId: id
+  });
+
+  const product = getProduct(id);
+
+  if (!product) {
+    holder.innerHTML = `
+      <div class="empty-state">
+        Este producto ya no está disponible.
+      </div>
+    `;
+    return;
+  }
+
   document.title = `${product.name} | Fonda Mexicana`;
+
+  const detailOutOfStock =
+    product.inventory_enabled &&
+    product.available_quantity <= 0;
+
+  const detailMaxQuantity =
+    product.inventory_enabled
+      ? Math.max(1, product.available_quantity)
+      : "";
+
+  const detailPayment = productPaymentLabel(product);
+
   holder.innerHTML = `
     <div class="detail-media">
-      <img src="${GENERIC_IMAGE}" alt="${product.name}">
+      <img
+        src="${product.image_url || GENERIC_IMAGE}"
+        alt="${product.name}"
+      >
     </div>
+
     <div class="detail-copy">
       <p class="section-kicker">${product.category}</p>
       <h1>${product.name}</h1>
       <p>${product.description}</p>
-      <strong class="price">${money(product.price)}</strong>
+      ${renderProductPrice(product)}
+      ${productUnitText(product) ? `<p class="product-unit">${productUnitText(product)}</p>` : ""}
+
+      <p
+        class="product-payment-method"
+        data-payment-method="${detailPayment.id}"
+      >
+        ${detailPayment.label}
+      </p>
+
+      ${product.inventory_enabled
+        ? `<p class="product-stock">${
+            product.available_quantity > 0
+              ? `Disponibles: ${product.available_quantity}`
+              : "Agotado"
+          }</p>`
+        : ""}
+
       <div class="detail-quantity">
         <span>Cantidad</span>
+
         <div class="quantity quantity-input" aria-label="Cantidad para agregar">
           <button type="button" data-detail-minus aria-label="Quitar uno">-</button>
-          <input id="detailQuantity" type="number" min="1" step="1" value="1" inputmode="numeric">
+          <input
+            id="detailQuantity"
+            type="number"
+            min="1"
+            step="1"
+            value="1"
+            inputmode="numeric"
+            ${detailMaxQuantity ? `max="${detailMaxQuantity}"` : ""}
+            ${detailOutOfStock ? "disabled" : ""}
+          >
           <button type="button" data-detail-plus aria-label="Agregar uno">+</button>
         </div>
       </div>
+
       <div class="detail-actions">
-        <button class="button primary" type="button" data-add="${product.id}">Agregar al carrito</button>
-        <a class="button secondary" href="carrito.html">Ir al carrito</a>
+        <button class="button primary" type="button" data-add="${product.id}" ${detailOutOfStock ? "disabled aria-disabled=\"true\"" : ""}>
+          Agregar al carrito
+        </button>
+
+        <a class="button secondary" href="carrito.html">
+          Ir al carrito
+        </a>
       </div>
     </div>
   `;
+
   const quantityInput = holder.querySelector("#detailQuantity");
+
   const normalizeQuantity = () => {
     const parsed = Number.parseInt(quantityInput.value, 10);
     const quantity = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
@@ -630,10 +1581,20 @@ function initDetail() {
   holder.querySelector("[data-detail-minus]")?.addEventListener("click", () => {
     quantityInput.value = Math.max(1, normalizeQuantity() - 1);
   });
+
   holder.querySelector("[data-detail-plus]")?.addEventListener("click", () => {
-    quantityInput.value = normalizeQuantity() + 1;
+    const current = normalizeQuantity();
+
+    if (product.inventory_enabled && current >= product.available_quantity) {
+      showToast(`Solo hay ${product.available_quantity} disponibles`);
+      return;
+    }
+
+    quantityInput.value = current + 1;
   });
+
   quantityInput?.addEventListener("change", normalizeQuantity);
+
   holder.querySelector("[data-add]")?.addEventListener("click", () => {
     addToCart(product.id, normalizeQuantity());
     quantityInput.value = 1;
@@ -641,6 +1602,8 @@ function initDetail() {
 }
 
 function renderCart() {
+  renderCheckoutPaymentOptions();
+
   const holder = document.getElementById("cartItems");
   const total = document.getElementById("cartTotal");
   if (!holder) return;
@@ -655,10 +1618,17 @@ function renderCart() {
   holder.innerHTML = items
     .map(({ product, quantity }) => `
       <article class="cart-item">
-        <img src="${GENERIC_IMAGE}" alt="${product.name}">
+        <img src="${product.image_url || GENERIC_IMAGE}" alt="${product.name}">
         <div class="cart-item-main">
           <h2>${product.name}</h2>
-          <p>${money(product.price)} c/u</p>
+          <p>${money(product.price)}${productUnitText(product) ? ` ${productUnitText(product)}` : ""}</p>
+
+          <a
+            class="button secondary cart-product-link"
+            href="detalle.html?id=${encodeURIComponent(product.id)}"
+          >
+            Ver producto
+          </a>
         </div>
         <div class="cart-item-controls">
           <div class="quantity compact" aria-label="Cantidad de ${product.name}">
@@ -696,7 +1666,7 @@ function buildWhatsAppMessage(orderId, customerName, locationText, shippingType,
   const location = formatLocationForMessage(locationText, shippingType);
   const productLines = items.flatMap((item) => [
     `• ${item.quantity} x ${item.product.name}`,
-    `  ${money(item.product.price)} c/u = *${money(item.product.price * item.quantity)}*`
+    `  ${money(item.product.price)}${productUnitText(item.product) ? ` ${productUnitText(item.product)}` : ""} = *${money(item.product.price * item.quantity)}*`
   ]);
 
   const lines = [
@@ -758,6 +1728,7 @@ function saveOrder(orderId, customerName, locationText, shippingType, items, mes
     status: "nuevo",
     paymentMethod,
     paymentStatus,
+    whatsappNumber: activeWhatsappNumber,
     deliveryCode: makeDeliveryCode(),
     total: cartTotal(items),
     message,
@@ -1083,7 +2054,236 @@ function setLocationLoading(isLoading) {
   document.getElementById("locationLoading")?.classList.toggle("show", isLoading);
 }
 
-function initCart() {
+function loadCustomerScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = [...document.scripts].find(script => script.src === src);
+
+    if (existing) {
+      if (existing.dataset.loaded === "true") {
+        resolve();
+        return;
+      }
+
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = false;
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+    script.onerror = () => reject(new Error("No se pudo cargar el login."));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureCustomerAuth() {
+  if (window.ITMFirebase?.configured) {
+    return window.ITMFirebase;
+  }
+
+  await loadCustomerScript(
+    "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js"
+  );
+
+  await loadCustomerScript(
+    "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth-compat.js"
+  );
+
+  await loadCustomerScript(
+    "https://itm-void-excepcional.pages.dev/firebase-config.js"
+  );
+
+  await loadCustomerScript(
+    "https://itm-void-excepcional.pages.dev/firebase-client.js"
+  );
+
+  if (!window.ITMFirebase?.configured) {
+    throw new Error("El inicio de sesión no está disponible.");
+  }
+
+  return window.ITMFirebase;
+}
+
+function renderCustomerAuth() {
+  const status = document.getElementById("customer-account-status");
+  const loginButton = document.getElementById("customer-login-btn");
+  const logoutButton = document.getElementById("customer-logout-btn");
+  const saveButton = document.getElementById("save-customer-profile-btn");
+
+  const loggedIn = Boolean(customerSession?.user);
+
+  if (loginButton) loginButton.hidden = loggedIn;
+  if (logoutButton) logoutButton.hidden = !loggedIn;
+  if (saveButton) saveButton.hidden = !loggedIn;
+
+  renderProfileMenu();
+
+  if (!status) return;
+
+  status.textContent = loggedIn
+    ? `Sesión iniciada como ${customerSession.user.displayName || "cliente"}.`
+    : "Inicia sesión para guardar tus datos.";
+}
+
+async function loadCustomerProfile() {
+  const status = document.getElementById("customer-account-status");
+
+  try {
+    const auth = await ensureCustomerAuth();
+    customerSession = await auth.getSession();
+
+    if (!customerSession?.idToken) {
+      renderCustomerAuth();
+      return;
+    }
+
+    const response = await fetch(ITM_PROFILE_URL, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      }
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result?.ok !== true) {
+      throw new Error(result?.code || "PROFILE_LOAD_FAILED");
+    }
+
+    customerProfile = result.profile || null;
+
+    const nameInput = document.getElementById("customerName");
+    const phoneInput = document.getElementById("customerPhone");
+    const addressInput = document.getElementById("manualLocation");
+    const referenceInput = document.getElementById("customerReference");
+
+    if (customerProfile) {
+      if (nameInput) nameInput.value = customerProfile.display_name || "";
+      if (phoneInput) phoneInput.value = customerProfile.phone || "";
+      if (addressInput) addressInput.value = customerProfile.address || "";
+      if (referenceInput) referenceInput.value = customerProfile.reference || "";
+    } else if (nameInput && !nameInput.value.trim()) {
+      nameInput.value = customerSession.user.displayName || "";
+    }
+
+    renderCustomerAuth();
+  } catch (error) {
+    if (status) {
+      status.textContent = "Puedes continuar como invitado.";
+    }
+
+    console.warn("Perfil de cliente no disponible:", error);
+  }
+}
+
+async function loginCustomer() {
+  const status = document.getElementById("customer-account-status");
+
+  try {
+    const auth = await ensureCustomerAuth();
+    await auth.signInWithGoogle();
+    await loadCustomerProfile();
+  } catch (error) {
+    if (status) {
+      status.textContent = "No se pudo iniciar sesión.";
+    }
+  }
+}
+
+async function logoutCustomer() {
+  try {
+    const auth = await ensureCustomerAuth();
+    await auth.signOut();
+
+    customerSession = null;
+    customerProfile = null;
+    renderCustomerAuth();
+  } catch (error) {
+    console.warn("No se pudo cerrar sesión:", error);
+  }
+}
+
+async function saveCustomerProfile() {
+  const status = document.getElementById("customer-account-status");
+  const nameInput = document.getElementById("customerName");
+  const phoneInput = document.getElementById("customerPhone");
+  const addressInput = document.getElementById("manualLocation");
+  const referenceInput = document.getElementById("customerReference");
+
+  if (!customerSession?.idToken) {
+    if (status) status.textContent = "Inicia sesión primero.";
+    return;
+  }
+
+  const displayName = nameInput?.value.trim() || "";
+
+  if (!displayName) {
+    if (status) status.textContent = "Escribe tu nombre.";
+    return;
+  }
+
+  try {
+    if (status) status.textContent = "Guardando datos...";
+
+    const response = await fetch(ITM_PROFILE_URL, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      },
+      body: JSON.stringify({
+        display_name: displayName,
+        phone: phoneInput?.value.trim() || "",
+        address: addressInput?.value.trim() || "",
+        reference: referenceInput?.value.trim() || ""
+      })
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result?.ok !== true) {
+      throw new Error(result?.code || "PROFILE_SAVE_FAILED");
+    }
+
+    customerProfile = result.profile || null;
+
+    if (status) {
+      status.textContent = "Datos guardados para próximos pedidos.";
+    }
+  } catch (error) {
+    if (status) {
+      status.textContent = "No se pudieron guardar tus datos.";
+    }
+  }
+}
+
+async function initCustomerProfilePage() {
+  document
+    .getElementById("customer-login-btn")
+    ?.addEventListener("click", loginCustomer);
+
+  document
+    .getElementById("customer-logout-btn")
+    ?.addEventListener("click", logoutCustomer);
+
+  document
+    .getElementById("customer-profile-form")
+    ?.addEventListener("submit", event => {
+      event.preventDefault();
+      saveCustomerProfile();
+    });
+
+  await loadCustomerProfile();
+}
+
+async function initCart() {
+  await loadCatalogProducts();
   renderCart();
 
   document.getElementById("storeDirectionsLink").href =
@@ -1162,8 +2362,20 @@ function initCart() {
   });
 
   document.getElementById("checkoutForm")?.addEventListener("change", (event) => {
-    if (event.target.name === "shippingType") applyShippingMode();
-    if (event.target.name === "locationMethod") setLocationMethod(event.target.value, { clearAddress: event.target.value !== "address" });
+    if (event.target.name === "shippingType") {
+      applyShippingMode();
+    }
+
+    if (event.target.name === "locationMethod") {
+      setLocationMethod(event.target.value, {
+        clearAddress: event.target.value !== "address"
+      });
+    }
+
+    if (event.target.name === "paymentMethod") {
+      renderCheckoutPaymentOptions();
+    }
+
     saveCheckoutDraft();
   });
   document.getElementById("manualLocation")?.addEventListener("input", (event) => {
@@ -1176,50 +2388,281 @@ function initCart() {
   });
   document.getElementById("customerName")?.addEventListener("input", saveCheckoutDraft);
   document.getElementById("deliveryNotes")?.addEventListener("input", saveCheckoutDraft);
-  document.getElementById("checkoutForm")?.addEventListener("submit", (event) => {
+  document.getElementById("checkoutForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+
+    const form = event.currentTarget;
+    const submitButton = form.querySelector("button[type='submit']");
     const items = cartItems();
+
     if (!items.length) {
       showToast("Agrega productos antes de pedir");
       return;
     }
 
-    const customerName = document.getElementById("customerName").value.trim();
-    const shippingType = document.querySelector("input[name='shippingType']:checked")?.value || "Entrega a domicilio";
-    const paymentMethod = "whatsapp";
+    const customerName =
+      document.getElementById("customerName")?.value.trim() || "";
+
+    const shippingType =
+      form.querySelector("input[name='shippingType']:checked")?.value ||
+      "Entrega a domicilio";
+
+    const paymentMethod =
+      cartPaymentMethod(items) ||
+      form.querySelector("input[name='paymentMethod']:checked")?.value ||
+      "whatsapp";
+
+    const paymentCode =
+      document.getElementById("paymentCode")?.value.trim() || "";
+
+    const isCodePayment = paymentMethod === "code";
+    const allowedMethods = cartPaymentMethods(items);
+
+    if (!allowedMethods.includes(paymentMethod)) {
+      showToast("Este método no está disponible para todos los productos.");
+      renderCheckoutPaymentOptions();
+      return;
+    }
+
+    if (isCodePayment && storeMode !== "managed_orders") {
+      showToast("El pago con código de confirmación no está disponible.");
+      return;
+    }
+
+    if (isCodePayment && paymentCode !== "01") {
+      showToast("Escribe un código de confirmación válido.");
+      document.getElementById("paymentCode")?.focus();
+      return;
+    }
+
     const isDelivery = shippingType === "Entrega a domicilio";
-    const deliveryNotes = document.getElementById("deliveryNotes").value.trim();
+    const deliveryNotes =
+      document.getElementById("deliveryNotes")?.value.trim() || "";
+
     const deliveryLocation = selectedLocationText();
+
     const locationText = isDelivery
       ? formatLocationWithNotes(deliveryLocation, deliveryNotes)
-      : `Pasar a buscar en tienda: ${STORE_LOCATION.address}\nHorario: ${STORE_LOCATION.hours}\nComo llegar: ${STORE_LOCATION.directionsUrl}`;
+      : `Pasar a buscar en tienda: ${STORE_LOCATION.address}
+Horario: ${STORE_LOCATION.hours}
+Como llegar: ${STORE_LOCATION.directionsUrl}`;
 
     if (!customerName) {
       showToast("Escribe el nombre del cliente");
       return;
     }
+
     if (isDelivery && !deliveryLocation) {
       showToast("Agrega ubicacion o direccion");
       return;
     }
-    if (isDelivery && selectedLocationMethod !== "address" && !deliveryNotes) {
+
+    if (
+      isDelivery &&
+      selectedLocationMethod !== "address" &&
+      !deliveryNotes
+    ) {
       showToast("Agrega direccion o referencia para ubicarte");
       return;
     }
 
-    const paymentStatus = "Pago por confirmar por WhatsApp";
-    const paymentLabel = "Por confirmar por WhatsApp";
+    if (!isCodePayment && !activeWhatsappNumber) {
+      showToast("Pedidos por WhatsApp en configuración");
+      return;
+    }
 
-    const orderId = makeOrderId();
-    const message = buildWhatsAppMessage(orderId, customerName, locationText, shippingType, items, paymentLabel);
-    saveOrder(orderId, customerName, locationText, shippingType, items, message, paymentMethod, paymentStatus);
-    setCart({});
-    clearCheckoutDraft();
-    renderCart();
-    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = isCodePayment
+        ? "Validando pago..."
+        : "Preparando WhatsApp...";
+    }
+
+    const whatsappLoading =
+      document.getElementById("whatsappLoading");
+
+    try {
+      if (isCodePayment) {
+        const orderResponse = await fetch(ITM_ORDERS_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({
+            payment_method: "code",
+            customer_name: customerName,
+            customer_phone: "",
+            customer_note: locationText,
+            items: items.map(({ product, quantity }) => ({
+              product_id: product.id,
+              quantity
+            }))
+          })
+        });
+
+        const orderResult = await orderResponse
+          .json()
+          .catch(() => ({}));
+
+        if (
+          !orderResponse.ok ||
+          orderResult?.ok !== true ||
+          !orderResult?.order?.id
+        ) {
+          throw new Error(
+            orderResult?.code ||
+              `ORDER_HTTP_${orderResponse.status}`
+          );
+        }
+
+        const paymentResponse = await fetch(
+          `${ITM_ORDERS_URL}&pay=1`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json"
+            },
+            body: JSON.stringify({
+              order_id: orderResult.order.id,
+              code: paymentCode
+            })
+          }
+        );
+
+        const paymentResult = await paymentResponse
+          .json()
+          .catch(() => ({}));
+
+        if (
+          !paymentResponse.ok ||
+          paymentResult?.ok !== true
+        ) {
+          throw new Error(
+            paymentResult?.code ||
+              `PAYMENT_HTTP_${paymentResponse.status}`
+          );
+        }
+
+        saveOrder(
+          orderResult.order.id,
+          customerName,
+          locationText,
+          shippingType,
+          items,
+          "",
+          "code",
+          "Pago confirmado con código de confirmación"
+        );
+
+        setCart({});
+        clearCheckoutDraft();
+        renderCart();
+
+        showToast("Pago confirmado. Pedido registrado.");
+        return;
+      }
+
+      const orderId = makeOrderId();
+      const paymentLabel = "Por confirmar por WhatsApp";
+      const paymentStatus = "Enviado por WhatsApp";
+
+      const directMessage = buildWhatsAppMessage(
+        orderId,
+        customerName,
+        locationText,
+        shippingType,
+        items,
+        paymentLabel
+      );
+
+      const whatsappUrl =
+        `https://wa.me/${activeWhatsappNumber}?text=${encodeURIComponent(
+          directMessage
+        )}`;
+
+      const mobileWhatsappUrl =
+        `whatsapp://send?phone=${activeWhatsappNumber}&text=${encodeURIComponent(
+          directMessage
+        )}`;
+
+      saveOrder(
+        orderId,
+        customerName,
+        locationText,
+        shippingType,
+        items,
+        directMessage,
+        "whatsapp",
+        paymentStatus
+      );
+
+      setCart({});
+      clearCheckoutDraft();
+      renderCart();
+
+      whatsappLoading?.classList.add("show");
+
+      const isMobileDevice =
+        /Android|iPhone|iPad|iPod/i.test(
+          navigator.userAgent
+        );
+
+      if (isMobileDevice) {
+        let appOpened = false;
+
+        const markAppOpened = () => {
+          if (document.visibilityState === "hidden") {
+            appOpened = true;
+          }
+        };
+
+        document.addEventListener(
+          "visibilitychange",
+          markAppOpened
+        );
+
+        window.location.href = mobileWhatsappUrl;
+
+        window.setTimeout(() => {
+          document.removeEventListener(
+            "visibilitychange",
+            markAppOpened
+          );
+
+          if (
+            !appOpened &&
+            document.visibilityState === "visible"
+          ) {
+            showToast(
+              "No se pudo abrir WhatsApp. Abre la aplicación e inténtalo nuevamente."
+            );
+          }
+        }, 2500);
+      } else {
+        window.open(whatsappUrl, "_blank", "noopener");
+      }
+    } catch (error) {
+      showToast(
+        error?.message ||
+          "No se pudo completar el pedido."
+      );
+    } finally {
+      whatsappLoading?.classList.remove("show");
+
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent =
+          paymentMethod === "code"
+            ? "Confirmar con código"
+            : "Hacer pedido por WhatsApp";
+      }
+
+      renderCheckoutPaymentOptions();
+    }
   });
 }
-
 function renderHistory() {
   const holder = document.getElementById("historyList");
   const currentHolder = document.getElementById("currentOrders");
@@ -1291,7 +2734,9 @@ function isWhatsappOrder(order) {
 
 function whatsappChatUrl(order) {
   const text = `Hola, ¿cómo va mi pedido? (${order.id})`;
-  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
+  const number = order.whatsappNumber || activeWhatsappNumber;
+  if (!number) return "#";
+  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
 }
 
 function whatsappOrderCard(order) {
@@ -1657,3 +3102,4 @@ if (page === "detalle") initDetail();
 if (page === "carrito") initCart();
 if (page === "mis-pedidos") initHistory();
 if (page === "panel-local") initLocalPanel();
+if (page === "perfil") initCustomerProfilePage();

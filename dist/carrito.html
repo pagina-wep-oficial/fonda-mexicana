@@ -18,7 +18,7 @@
       <nav class="nav" aria-label="Principal">
         <a href="tienda.html">Hacer pedido</a>
         <a class="cart-link active" href="carrito.html">Carrito <span data-cart-count>0</span></a>
-        <a href="mis-pedidos.html">En curso</a>
+        <a href="mis-pedidos.html">Mis pedidos</a>
       </nav>
     </header>
 
@@ -133,13 +133,41 @@
               <input type="radio" name="paymentMethod" value="whatsapp" checked>
               <span>Confirmar por WhatsApp</span>
             </label>
+
+            <label class="radio-row" id="code-payment-option" hidden>
+              <input type="radio" name="paymentMethod" value="code">
+              <span>Usar código de confirmación</span>
+            </label>
+
+            <div id="payment-code-panel" hidden>
+              <label>
+                <span>Código de confirmación</span>
+                <input
+                  id="paymentCode"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="2"
+                  autocomplete="off"
+                  placeholder="01"
+                >
+              </label>
+              <p class="muted" id="payment-code-status">
+                Introduce el código proporcionado por la tienda.
+              </p>
+            </div>
           </fieldset>
 
           <div class="checkout-total">
             <span>Total</span>
             <strong id="cartTotal">$0.00</strong>
           </div>
-          <button class="button whatsapp full" type="submit">Hacer pedido por WhatsApp</button>
+          <button
+            class="button whatsapp full"
+            id="checkoutSubmitButton"
+            type="submit"
+          >
+            Hacer pedido por WhatsApp
+          </button>
         </form>
       </section>
     </main>
@@ -166,6 +194,14 @@
         <span class="loading-spinner" aria-hidden="true"></span>
         <strong>Detectando ubicacion</strong>
         <p>Espera un momento mientras buscamos tu punto exacto.</p>
+      </div>
+    </div>
+
+    <div class="loading-modal" id="whatsappLoading" role="status" aria-live="polite" aria-label="Abriendo WhatsApp">
+      <div class="loading-card">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <strong>Abriendo WhatsApp</strong>
+        <p>Estamos preparando tu pedido.</p>
       </div>
     </div>
 
