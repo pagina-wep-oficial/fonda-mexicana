@@ -4,6 +4,8 @@ let storeLiveSocket = null;
 let storeLiveRetry = 0;
 let storeLiveTimer = 0;
 let storeLiveClosing = false;
+let storeSettingsRefreshTimer = 0;
+let storeSettingsRefreshRequest = null;
 let storeMode = "whatsapp_catalog";
 let enabledPaymentMethods = ["whatsapp"];
 let defaultPaymentMethod = "whatsapp";
@@ -99,6 +101,68 @@ async function loadStaticStoreConfig() {
   }
 }
 
+async function refreshStoreSettingsFromServer() {
+  if (storeSettingsRefreshRequest) {
+    return storeSettingsRefreshRequest;
+  }
+
+  const request = (async () => {
+    const endpoint = new URL(ITM_PRODUCTS_URL);
+
+    endpoint.searchParams.set("limit", "1");
+    endpoint.searchParams.set("offset", "0");
+
+    const response = await fetch(endpoint, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok || body?.ok !== true) {
+      throw new Error(body?.code || `STORE_SETTINGS_HTTP_${response.status}`);
+    }
+
+    applyStorePaymentSettings(body.settings || {});
+
+    if (document.body.dataset.page === "carrito") {
+      renderCart();
+    }
+
+    return body.settings || {};
+  })();
+
+  storeSettingsRefreshRequest = request;
+
+  try {
+    return await request;
+  } catch (error) {
+    console.warn(
+      "No se pudo actualizar la configuración de tienda en vivo:",
+      error
+    );
+
+    return null;
+  } finally {
+    if (storeSettingsRefreshRequest === request) {
+      storeSettingsRefreshRequest = null;
+    }
+  }
+}
+
+function scheduleStoreSettingsRefresh() {
+  if (storeSettingsRefreshTimer) {
+    return;
+  }
+
+  storeSettingsRefreshTimer = window.setTimeout(() => {
+    storeSettingsRefreshTimer = 0;
+    void refreshStoreSettingsFromServer();
+  }, 250);
+}
+
 function buildStoreLiveUrl(base) {
   const baseClean = String(base || "")
     .trim()
@@ -150,9 +214,14 @@ function handleStoreLiveMessage(raw) {
 
   if (!event || event.project_id !== ITM_PROJECT_ID) return;
 
+  if (event.type === "store_settings_changed") {
+    scheduleStoreSettingsRefresh();
+    scheduleLiveCartQuote();
+    return;
+  }
+
   if (
     event.type === "catalog_changed" ||
-    event.type === "store_settings_changed" ||
     event.type === "inventory_changed"
   ) {
     scheduleLiveCartQuote();
@@ -1978,6 +2047,7 @@ async function initCatalog() {
   });
 
   await restoreCatalogViewState();
+  connectStoreLive();
 }
 
 async function initDetail() {
