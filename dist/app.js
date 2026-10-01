@@ -1,4 +1,9 @@
 let activeWhatsappNumber = "";
+let activeStoreLiveUrl = "";
+let storeLiveSocket = null;
+let storeLiveRetry = 0;
+let storeLiveTimer = 0;
+let storeLiveClosing = false;
 let storeMode = "whatsapp_catalog";
 let enabledPaymentMethods = ["whatsapp"];
 let defaultPaymentMethod = "whatsapp";
@@ -75,12 +80,147 @@ async function loadStaticStoreConfig() {
       : configuredPhone
         ? `52${configuredPhone}`
         : "";
+
+    const liveUrl = String(body.store_live_url || "").trim();
+
+    if (/^https?:\/\//i.test(liveUrl) && body.project_id === ITM_PROJECT_ID) {
+      activeStoreLiveUrl = liveUrl;
+    } else if (liveUrl) {
+      console.warn("store-config.json contiene store_live_url no permitido.");
+    }
   } catch (error) {
     activeWhatsappNumber = "";
+    activeStoreLiveUrl = "";
     console.error(
       "No se pudo cargar la configuracion estatica de la tienda:",
       error
     );
+  }
+}
+
+function buildStoreLiveUrl(base) {
+  const baseClean = String(base || "")
+    .trim()
+    .replace(/\/+$/, "");
+
+  if (!baseClean) return "";
+
+  let url;
+
+  try {
+    url = new URL(baseClean);
+  } catch {
+    return "";
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return "";
+  }
+
+  const path = url.pathname.replace(/\/+$/, "");
+
+  url.pathname = path.endsWith("/connect") ? path : `${path}/connect`;
+  url.searchParams.set("project_id", ITM_PROJECT_ID);
+  url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
+
+  return url.toString();
+}
+
+function scheduleLiveCartQuote() {
+  if (!cartQuotePayload().items.length) return;
+  if (storeLiveTimer) return;
+
+  storeLiveTimer = window.setTimeout(() => {
+    storeLiveTimer = 0;
+    if (typeof requestCartQuote === "function") {
+      requestCartQuote();
+    }
+  }, 900);
+}
+
+function handleStoreLiveMessage(raw) {
+  let event;
+
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    return;
+  }
+
+  if (!event || event.project_id !== ITM_PROJECT_ID) return;
+
+  if (
+    event.type === "catalog_changed" ||
+    event.type === "store_settings_changed" ||
+    event.type === "inventory_changed"
+  ) {
+    scheduleLiveCartQuote();
+  }
+}
+
+function connectStoreLive() {
+  if (
+    storeLiveClosing ||
+    storeLiveSocket ||
+    typeof WebSocket === "undefined"
+  ) {
+    return;
+  }
+
+  if (!activeStoreLiveUrl) return;
+
+  const url = buildStoreLiveUrl(activeStoreLiveUrl);
+
+  if (!url) return;
+
+  let socket;
+
+  try {
+    socket = new WebSocket(url);
+  } catch {
+    return;
+  }
+
+  storeLiveSocket = socket;
+
+  socket.addEventListener("open", () => {
+    storeLiveRetry = 0;
+  });
+
+  socket.addEventListener("message", (message) => {
+    handleStoreLiveMessage(
+      typeof message.data === "string" ? message.data : ""
+    );
+  });
+
+  socket.addEventListener("close", () => {
+    if (storeLiveSocket === socket) storeLiveSocket = null;
+    if (storeLiveClosing) return;
+
+    storeLiveRetry += 1;
+    const delay = Math.min(30000, 1000 * 2 ** Math.min(storeLiveRetry, 5));
+    window.setTimeout(connectStoreLive, delay);
+  });
+
+  socket.addEventListener("error", () => {
+    try {
+      socket.close();
+    } catch {}
+  });
+}
+
+function disconnectStoreLive() {
+  storeLiveClosing = true;
+  if (storeLiveTimer) {
+    window.clearTimeout(storeLiveTimer);
+    storeLiveTimer = 0;
+  }
+
+  if (storeLiveSocket) {
+    try {
+      storeLiveSocket.close();
+    } catch {}
+    storeLiveSocket = null;
   }
 }
 
@@ -2499,6 +2639,7 @@ async function initCart() {
   await loadCatalogProducts();
   await requestCartQuote({ quiet: true });
   renderCart();
+  connectStoreLive();
 
   document.getElementById("storeDirectionsLink").href =
     STORE_LOCATION.directionsUrl;
