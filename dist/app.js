@@ -230,7 +230,7 @@ function handleStoreLiveMessage(raw) {
     event.type === "catalog_changed" ||
     event.type === "inventory_changed"
   ) {
-    scheduleLiveCatalogRefresh();
+    scheduleLiveCatalogRefresh(event);
     scheduleLiveDetailRefresh(event);
     scheduleLiveCartQuote();
   }
@@ -552,6 +552,9 @@ let catalogRequestController = null;
 let catalogSlotObserver = null;
 let catalogPageObserver = null;
 let catalogLiveRefreshTimer = 0;
+let catalogLiveNeedsFullRefresh = false;
+const catalogLiveProductIds = new Set();
+let catalogLiveApplying = false;
 let detailLiveRefreshTimer = 0;
 let selectedLocationMethod = "address";
 let currentGpsLocation = "";
@@ -845,25 +848,117 @@ async function refreshCatalogKeepingView() {
   await finishCatalogViewRestore(saved);
 }
 
-function scheduleLiveCatalogRefresh() {
-  if (document.body.dataset.page !== "tienda") {
-    return;
-  }
-
+function armLiveCatalogRefresh() {
   if (catalogLiveRefreshTimer) {
     return;
   }
 
   catalogLiveRefreshTimer = window.setTimeout(() => {
-    catalogLiveRefreshTimer = 0;
+    void flushLiveCatalogRefresh();
+  }, 350);
+}
 
-    if (catalogState.loading) {
-      scheduleLiveCatalogRefresh();
+function scheduleLiveCatalogRefresh(event = null) {
+  if (document.body.dataset.page !== "tienda") {
+    return;
+  }
+
+  const productIds = Array.isArray(event?.product_ids)
+    ? [
+        ...new Set(
+          event.product_ids
+            .map((id) => String(id || "").trim())
+            .filter(Boolean)
+        )
+      ]
+    : [];
+
+  const canPatchOnlyAffectedProducts =
+    productIds.length > 0 &&
+    (
+      event?.type === "inventory_changed" ||
+      (
+        event?.type === "catalog_changed" &&
+        event?.scope === "product_patch"
+      )
+    );
+
+  if (
+    canPatchOnlyAffectedProducts &&
+    !catalogLiveNeedsFullRefresh
+  ) {
+    productIds.forEach((productId) => {
+      catalogLiveProductIds.add(productId);
+    });
+  } else {
+    catalogLiveNeedsFullRefresh = true;
+    catalogLiveProductIds.clear();
+  }
+
+  armLiveCatalogRefresh();
+}
+
+async function flushLiveCatalogRefresh() {
+  if (document.body.dataset.page !== "tienda") {
+    catalogLiveRefreshTimer = 0;
+    catalogLiveNeedsFullRefresh = false;
+    catalogLiveProductIds.clear();
+    return;
+  }
+
+  if (catalogState.loading || catalogLiveApplying) {
+    catalogLiveRefreshTimer = window.setTimeout(() => {
+      void flushLiveCatalogRefresh();
+    }, 350);
+    return;
+  }
+
+  catalogLiveRefreshTimer = 0;
+
+  const needsFullRefresh = catalogLiveNeedsFullRefresh;
+  const productIds = [...catalogLiveProductIds];
+
+  catalogLiveNeedsFullRefresh = false;
+  catalogLiveProductIds.clear();
+  catalogLiveApplying = true;
+
+  try {
+    if (needsFullRefresh) {
+      await refreshCatalogKeepingView();
       return;
     }
 
-    void refreshCatalogKeepingView();
-  }, 350);
+    let mustRecoverWithFullRefresh = false;
+
+    for (const productId of productIds) {
+      const patched = await patchLiveCatalogProduct(productId);
+
+      if (!patched) {
+        mustRecoverWithFullRefresh = true;
+      }
+    }
+
+    if (mustRecoverWithFullRefresh) {
+      await refreshCatalogKeepingView();
+    }
+  } catch (error) {
+    console.error(
+      "No se pudo actualizar un producto en tiempo real:",
+      error
+    );
+
+    await refreshCatalogKeepingView();
+  } finally {
+    catalogLiveApplying = false;
+
+    if (
+      (catalogLiveNeedsFullRefresh ||
+        catalogLiveProductIds.size > 0) &&
+      !catalogLiveRefreshTimer
+    ) {
+      armLiveCatalogRefresh();
+    }
+  }
 }
 
 function getCart() {
@@ -1915,6 +2010,112 @@ function renderCatalog() {
   setupVirtualCatalog();
 }
 
+function mapPublicCatalogProduct(product) {
+  return {
+    id: String(product.id),
+    name: String(product.name || "Producto"),
+    category: String(product.category || "Otros"),
+    featured: product.featured === true,
+    price: Number(product.price) || 0,
+    compare_at_price: Number(product.compare_at_price) || 0,
+    unit_label: String(product.unit_label || "").trim(),
+    description: String(product.description || ""),
+    image_url: String(
+      product.image_url ||
+        product.media?.find(
+          (media) => media.media_type === "image"
+        )?.source_url ||
+        ""
+    ),
+    inventory_enabled: product.inventory_enabled === true,
+    stock_quantity: Number(product.stock_quantity) || 0,
+    reserved_quantity: Number(product.reserved_quantity) || 0,
+    available_quantity: Number(product.available_quantity) || 0,
+    payment_methods:
+      Array.isArray(product.payment_methods) &&
+      product.payment_methods.length
+        ? product.payment_methods
+        : [defaultPaymentMethod],
+    default_payment_method:
+      product.default_payment_method || defaultPaymentMethod
+  };
+}
+
+async function fetchPublicCatalogProduct(productId) {
+  const endpoint = new URL(ITM_PRODUCTS_URL);
+
+  endpoint.searchParams.set("limit", "1");
+  endpoint.searchParams.set("offset", "0");
+  endpoint.searchParams.set("id", String(productId));
+
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+
+  const body = await response.json();
+
+  if (
+    !response.ok ||
+    body?.ok !== true ||
+    !Array.isArray(body.products)
+  ) {
+    throw new Error(
+      body?.code || `CATALOG_PRODUCT_HTTP_${response.status}`
+    );
+  }
+
+  applyStorePaymentSettings(body.settings || {});
+
+  return body.products[0]
+    ? mapPublicCatalogProduct(body.products[0])
+    : null;
+}
+
+function refreshCatalogSlot(productIndex) {
+  const slot = document.querySelector(
+    `[data-catalog-slot][data-catalog-index="${productIndex}"]`
+  );
+
+  if (!slot) {
+    return;
+  }
+
+  const wasHydrated = slot.dataset.hydrated === "true";
+
+  slot.innerHTML = "";
+  delete slot.dataset.hydrated;
+
+  if (wasHydrated) {
+    hydrateCatalogSlot(slot);
+  }
+}
+
+async function patchLiveCatalogProduct(productId) {
+  const productIndex = catalogState.items.findIndex(
+    (product) => String(product.id) === String(productId)
+  );
+
+  if (productIndex < 0) {
+    return true;
+  }
+
+  const nextProduct = await fetchPublicCatalogProduct(productId);
+
+  if (!nextProduct) {
+    return false;
+  }
+
+  catalogState.items[productIndex] = nextProduct;
+  products = catalogState.items;
+
+  refreshCatalogSlot(productIndex);
+
+  return true;
+}
+
 async function loadCatalogProducts({ reset = true, productId = null } = {}) {
   if (!reset && (!catalogState.hasMore || catalogState.loading)) {
     return;
@@ -1982,34 +2183,9 @@ async function loadCatalogProducts({ reset = true, productId = null } = {}) {
 
     applyStorePaymentSettings(body.settings || {});
 
-    const mappedProducts = body.products.map((product) => ({
-      id: String(product.id),
-      name: String(product.name || "Producto"),
-      category: String(product.category || "Otros"),
-      featured: product.featured === true,
-      price: Number(product.price) || 0,
-      compare_at_price: Number(product.compare_at_price) || 0,
-      unit_label: String(product.unit_label || "").trim(),
-      description: String(product.description || ""),
-      image_url: String(
-        product.image_url ||
-          product.media?.find(
-            (media) => media.media_type === "image"
-          )?.source_url ||
-          ""
-      ),
-      inventory_enabled: product.inventory_enabled === true,
-      stock_quantity: Number(product.stock_quantity) || 0,
-      reserved_quantity: Number(product.reserved_quantity) || 0,
-      available_quantity: Number(product.available_quantity) || 0,
-      payment_methods:
-        Array.isArray(product.payment_methods) &&
-        product.payment_methods.length
-          ? product.payment_methods
-          : [defaultPaymentMethod],
-      default_payment_method:
-        product.default_payment_method || defaultPaymentMethod
-    }));
+    const mappedProducts = body.products.map(
+      mapPublicCatalogProduct
+    );
 
     catalogState.items = reset
       ? mappedProducts
