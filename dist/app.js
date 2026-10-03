@@ -6,6 +6,7 @@ let storeLiveTimer = 0;
 let storeLiveClosing = false;
 let storeSettingsRefreshTimer = 0;
 let storeSettingsRefreshRequest = null;
+let customerOrdersRefreshTimer = 0;
 let storeMode = "whatsapp_catalog";
 let enabledPaymentMethods = ["whatsapp"];
 let defaultPaymentMethod = "whatsapp";
@@ -23,6 +24,7 @@ const ITM_ORDERS_URL =
   `https://itm-void-excepcional.pages.dev/api/store-orders?project_id=${encodeURIComponent(ITM_PROJECT_ID)}&public=1`;
 const ITM_PROFILE_URL =
   `https://itm-void-excepcional.pages.dev/api/store-customer-profile?project_id=${encodeURIComponent(ITM_PROJECT_ID)}`;
+const ITM_MY_ORDERS_URL = `${ITM_ORDERS_URL}&mine=1`;
 const STORE_CONFIG_URL = "/store-config.json";
 const CATALOG_VIEW_KEY = `itm.catalog.view:${ITM_PROJECT_ID}`;
 
@@ -233,7 +235,23 @@ function handleStoreLiveMessage(raw) {
     scheduleLiveCatalogRefresh(event);
     scheduleLiveDetailRefresh(event);
     scheduleLiveCartQuote();
+    return;
   }
+
+  // Cambio de estado o entrega: solo afecta la vista de pedidos del cliente.
+  if (event.type === "order_changed") {
+    scheduleCustomerOrdersRefresh();
+  }
+}
+
+function scheduleCustomerOrdersRefresh() {
+  if (document.body.dataset.page !== "mis-pedidos") return;
+  if (typeof refreshHistoryView !== "function") return;
+
+  window.clearTimeout(customerOrdersRefreshTimer);
+  customerOrdersRefreshTimer = window.setTimeout(() => {
+    void refreshHistoryView();
+  }, 250);
 }
 
 function connectStoreLive() {
@@ -325,6 +343,18 @@ const ORDER_FLOWS = {
 
 const CANCELLED_STATUS = "cancelado";
 const LEGACY_STATUS_MAP = { preparando: "alistando" };
+// Estados de Neon traducidos al flujo que ya entiende la linea de tiempo.
+const SERVER_STATUS_MAP = {
+  pending: "nuevo",
+  paid: "aceptado",
+  accepted: "aceptado",
+  preparing: "alistando",
+  ready_for_delivery: "listo",
+  shipping: "en-camino",
+  delivered: "entregado",
+  cancelled: CANCELLED_STATUS,
+  rejected: CANCELLED_STATUS
+};
 const ACTIVE_STATUS_BLOCKERS = ["entregado", "retirado", CANCELLED_STATUS];
 
 const MAP_STYLES = {
@@ -564,6 +594,8 @@ let mapMarker = null;
 let mapLayer = null;
 let mapStyleKey = "calle";
 let pendingMapCoords = null;
+let currentGpsCoords = null;
+let selectedMapCoords = null;
 let calendarCursorDate = new Date();
 let selectedReportDate = localDateKey(new Date());
 
@@ -1857,7 +1889,11 @@ const payment = productPaymentLabel(product);
 
       <div class="product-body">
         <div class="product-meta">
-          <span class="category">${product.category}</span>
+          <span class="category">${
+            String(product.category || "").toLowerCase() === "destacados"
+              ? "Destacados"
+              : product.category
+          }</span>
           ${renderProductPrice(product)}
           ${productUnitText(product) ? `<small class="product-unit">${productUnitText(product)}</small>` : ""}
         </div>
@@ -2598,10 +2634,6 @@ function buildWhatsAppMessage(orderId, customerName, locationText, shippingType,
   return lines.join("\n");
 }
 
-function makeDeliveryCode() {
-  return String(Math.floor(1000 + Math.random() * 9000));
-}
-
 function makeOrderId() {
   const stored = readJson(ORDER_SEQ_KEY, null);
   const current = typeof stored === "number" && stored >= ORDER_SEQ_START ? stored : ORDER_SEQ_START;
@@ -2622,7 +2654,9 @@ function saveOrder(orderId, customerName, locationText, shippingType, items, mes
     paymentMethod,
     paymentStatus,
     whatsappNumber: activeWhatsappNumber,
-    deliveryCode: makeDeliveryCode(),
+    // Los pedidos de WhatsApp se confirman en el chat: no llevan codigo de
+    // entrega. El codigo solo existe para pedidos gestionados en Neon.
+    deliveryCode: "",
     total: cartTotal(items),
     message,
     events: [
@@ -2723,12 +2757,20 @@ function setGpsPreview(coords) {
 
 function clearGpsLocation() {
   currentGpsLocation = "";
+  currentGpsCoords = null;
   setGpsPreview(null);
 }
 
 function clearMapLocation() {
   mapLocation = "";
+  selectedMapCoords = null;
   setMapPreview(null);
+}
+
+function selectedLocationCoords() {
+  if (selectedLocationMethod === "gps") return currentGpsCoords;
+  if (selectedLocationMethod === "map") return selectedMapCoords;
+  return null;
 }
 
 function selectedLocationText() {
@@ -3227,6 +3269,7 @@ async function initCart() {
         setLocationLoading(false);
         const { latitude, longitude } = position.coords;
         currentGpsLocation = `Ubicacion precisa del cliente\n${mapsLink(latitude, longitude)}`;
+        currentGpsCoords = { latitude, longitude };
         setGpsPreview({ latitude, longitude });
         setLocationMethod("gps", { clearAddress: true });
         saveCheckoutDraft();
@@ -3270,6 +3313,7 @@ async function initCart() {
     }
     const { latitude, longitude } = pendingMapCoords;
     mapLocation = `Punto elegido por el cliente\n${mapsLink(latitude, longitude)}`;
+    selectedMapCoords = { latitude, longitude };
     setMapPreview(pendingMapCoords);
     setLocationMethod("map", { clearAddress: true });
     saveCheckoutDraft();
@@ -3328,8 +3372,11 @@ async function initCart() {
       return;
     }
 
-    const customerName =
+const customerName =
       document.getElementById("customerName")?.value.trim() || "";
+
+    const checkoutPhone =
+      document.getElementById("customerPhone")?.value.trim() || "";
 
     const shippingType =
       form.querySelector("input[name='shippingType']:checked")?.value ||
@@ -3367,7 +3414,8 @@ async function initCart() {
     const deliveryNotes =
       document.getElementById("deliveryNotes")?.value.trim() || "";
 
-    const deliveryLocation = selectedLocationText();
+const deliveryLocation = selectedLocationText();
+    const deliveryCoords = isDelivery ? selectedLocationCoords() : null;
 
     const locationText = isDelivery
       ? formatLocationWithNotes(deliveryLocation, deliveryNotes)
@@ -3410,6 +3458,18 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
       document.getElementById("whatsappLoading");
 
     try {
+      if (isCodePayment) {
+        const auth = await ensureCustomerAuth();
+        customerSession = await auth.getSession();
+
+        if (!customerSession?.idToken) {
+          showToast(
+            "Inicia sesión con Google para pagar y seguir este pedido."
+          );
+          return;
+        }
+      }
+
       const revisionBeforeCheckout = cartQuoteState.revision;
 
       const quote = await requestCartQuote({
@@ -3447,13 +3507,22 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Accept: "application/json"
+            Accept: "application/json",
+            Authorization: `Bearer ${customerSession.idToken}`
           },
           body: JSON.stringify({
             payment_method: "code",
             customer_name: customerName,
-            customer_phone: "",
+            customer_phone: checkoutPhone,
             customer_note: locationText,
+            fulfillment_type: isDelivery ? "delivery" : "pickup",
+            // En recogida la direccion y la referencia se mandan en null: el
+            // pedido se entrega en el local, no en un domicilio. La direccion
+            // del tienda viaja solo en customer_note, que el cliente ve.
+            delivery_address: isDelivery ? deliveryLocation : null,
+            delivery_reference: isDelivery ? deliveryNotes : null,
+            delivery_latitude: deliveryCoords?.latitude ?? null,
+            delivery_longitude: deliveryCoords?.longitude ?? null,
             quote_revision: checkoutQuoteRevision,
             items: items.map(({ product, quantity }) => ({
               product_id: product.id,
@@ -3483,7 +3552,8 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Accept: "application/json"
+              Accept: "application/json",
+              Authorization: `Bearer ${customerSession.idToken}`
             },
             body: JSON.stringify({
               order_id: orderResult.order.id,
@@ -3506,22 +3576,19 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
           );
         }
 
-        saveOrder(
-          orderResult.order.id,
-          customerName,
-          locationText,
-          shippingType,
-          items,
-          "",
-          "code",
-          "Pago confirmado con código de confirmación"
-        );
-
+// El pedido con codigo vive en Neon: no se copia al historial local.
+        // El codigo de entrega lo emite la tienda cuando el pedido queda
+        // listo y se lee desde la vista autenticada de Mis pedidos.
         setCart({});
         clearCheckoutDraft();
         renderCart();
+        void refreshHistoryView();
 
-        showToast("Pago confirmado. Pedido registrado.");
+        showToast(
+          customerSession?.idToken
+            ? "Pago confirmado. Sigue tu pedido en Mis pedidos."
+            : "Pago confirmado. Inicia sesion para seguir tu pedido."
+        );
         return;
       }
 
@@ -3636,11 +3703,11 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
     }
   });
 }
-function renderHistory() {
+function renderHistory(historyInput) {
   const holder = document.getElementById("historyList");
   const currentHolder = document.getElementById("currentOrders");
   if (!holder && !currentHolder) return;
-  const history = getHistory();
+  const history = Array.isArray(historyInput) ? historyInput : getHistory();
   const activeOrders = history.filter(isActiveOrder);
 
   if (currentHolder) {
@@ -3784,11 +3851,174 @@ function currentOrderCard(order) {
   `;
 }
 
+/**
+ * Pedidos que viven en Neon. Solo se muestran si el cliente tiene sesion: el
+ * endpoint exige el token de Firebase y nunca devuelve pedidos de otra cuenta.
+ * Los pedidos de WhatsApp se quedan en el historial local del navegador.
+ */
+async function loadCustomerServerOrders() {
+  if (!customerSession?.idToken) return [];
+
+  try {
+    const response = await fetch(ITM_MY_ORDERS_URL, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      },
+      cache: "no-store"
+    });
+
+    if (!response.ok) return [];
+
+    const result = await response.json().catch(() => ({}));
+    if (result?.ok !== true || !Array.isArray(result.orders)) return [];
+
+    return result.orders.map(serverOrderToLocal);
+  } catch {
+    return [];
+  }
+}
+
+function serverOrderToLocal(order) {
+  const items = (order.items || []).map((item) => ({
+    id: item.product_id,
+    name: item.name,
+    price: Number(item.price) || 0,
+    quantity: Number(item.quantity) || 0
+  }));
+
+  const locationLines = [];
+
+  if (order.fulfillment_type === "pickup") {
+    locationLines.push(`Pasar a buscar en tienda: ${STORE_LOCATION.address}`);
+  } else if (order.delivery_address) {
+    locationLines.push(order.delivery_address);
+    if (order.delivery_latitude !== null && order.delivery_longitude !== null) {
+      locationLines.push(mapsLink(order.delivery_latitude, order.delivery_longitude));
+    }
+    if (order.delivery_reference) {
+      locationLines.push(`Referencia: ${order.delivery_reference}`);
+    }
+  }
+
+  return {
+    id: order.id,
+    createdAt: order.created_at,
+    updatedAt: order.updated_at,
+    customerName: order.customer_name || "",
+    locationText: locationLines.join("\n"),
+    shippingType: order.fulfillment_type === "pickup" ? "Pasar a buscar" : "Entrega a domicilio",
+    status: SERVER_STATUS_MAP[order.status] || "nuevo",
+    paymentMethod: order.payment_method,
+    paymentStatus:
+      order.payment_status === "paid" ? "Pago confirmado con codigo" : "Pago por confirmar",
+    deliveryCode: order.delivery_code || "",
+    total: Number(order.subtotal) || 0,
+    message: "",
+    fromServer: true,
+    events: serverTimelineToLocal(order),
+    items
+  };
+}
+
+/**
+ * El endpoint "mine" ya devuelve un timeline recortado (sin actor, sin notas
+ * internas y sin datos del personal). Aqui solo se traduce a texto legible.
+ */
+function serverTimelineToLocal(order) {
+  const timeline = Array.isArray(order.timeline) ? order.timeline : [];
+
+  const labels = {
+    paid: "Pago confirmado",
+    accepted: "Pedido aceptado por la tienda",
+    preparing: "La tienda esta preparando tu pedido",
+    ready_for_delivery: "Tu pedido esta listo",
+    shipping: "Tu pedido va en camino",
+    delivered: "Pedido entregado",
+    cancelled: "Pedido cancelado",
+    rejected: "Pedido rechazado"
+  };
+
+  const events = timeline
+    .filter((entry) => entry && labels[entry.status])
+    .map((entry) => ({
+      at: entry.at || order.created_at,
+      text: labels[entry.status]
+    }))
+    .sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+
+  return events.length
+    ? events
+    : [
+        {
+          at: order.created_at,
+          text: "Pedido recibido"
+        }
+      ];
+}
+
+/**
+ * Fusiona historial local y pedidos de Neon. Si un id aparece en ambos, gana
+ * el de Neon: es la fuente de verdad del estado y del codigo de entrega.
+ */
+function mergeOrderSources(localHistory, serverOrders) {
+  const serverIds = new Set(serverOrders.map((order) => order.id));
+  const localOnly = localHistory.filter((order) => !serverIds.has(order.id));
+
+  return [...serverOrders, ...localOnly].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+}
+
+async function refreshHistoryView() {
+  const localHistory = getHistory();
+  const serverOrders = await loadCustomerServerOrders();
+
+  renderHistory(mergeOrderSources(localHistory, serverOrders));
+  renderCustomerOrderNotice(serverOrders.length, localHistory.length);
+}
+
+function renderCustomerOrderNotice(serverCount, localCount) {
+  const holder = document.getElementById("historyNotice");
+  if (!holder) return;
+
+  if (!customerSession?.idToken) {
+    holder.innerHTML = `
+      <p class="muted">
+        Inicia sesion para ver tus pedidos con codigo, su estado en vivo y el codigo de entrega.
+      </p>
+    `;
+    return;
+  }
+
+  if (!serverCount && !localCount) {
+    holder.innerHTML = `<p class="muted">Aun no tienes pedidos registrados.</p>`;
+    return;
+  }
+
+  holder.innerHTML = `
+    <p class="muted">
+      ${serverCount} pedido${serverCount === 1 ? "" : "s"} desde la tienda
+      ${localCount ? ` y ${localCount} por WhatsApp en este navegador.` : "."}
+    </p>
+  `;
+}
+
 function initHistory() {
   renderHistory();
+  renderCustomerOrderNotice(0, getHistory().length);
+
+  // El token de Firebase se restaura de forma asincrona; los pedidos de Neon
+  // solo se piden cuando ya hay sesion.
+  void (async () => {
+    await loadProfileIdentity();
+    await refreshHistoryView();
+  })();
+
   document.getElementById("clearHistoryBtn")?.addEventListener("click", () => {
     setHistory([]);
     renderHistory();
+    renderCustomerOrderNotice(0, 0);
   });
 }
 

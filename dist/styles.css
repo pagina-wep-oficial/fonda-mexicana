@@ -1364,6 +1364,21 @@ textarea:focus {
   gap: 12px;
 }
 
+/* Aviso de sesion en Mis pedidos: explica de donde viene cada pedido. */
+.notice {
+  display: block;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  font-size: 0.92rem;
+}
+
+.notice p {
+  margin: 0;
+}
+
 .current-order-card {
   display: grid;
   gap: 14px;

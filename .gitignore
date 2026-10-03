@@ -1,0 +1,10 @@
+# Herramientas locales de Cloudflare
+.wrangler/
+
+# Dependencias
+node_modules/
+
+# Secretos
+.dev.vars
+.env
+.env.*
