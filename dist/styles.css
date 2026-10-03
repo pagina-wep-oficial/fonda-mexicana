@@ -3415,3 +3415,379 @@ textarea:focus {
   font-weight: 800;
   text-align: left;
 }
+
+/* ===== Mis pedidos: laptop, detalle y seguimiento ===== */
+.orders-page .orders-workspace {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.78fr) minmax(0, 1.55fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.orders-page .orders-queue,
+.orders-page .orders-detail {
+  min-width: 0;
+}
+
+.orders-page .orders-queue {
+  padding: 14px;
+  background: rgba(255, 253, 251, 0.78);
+  border: 1px solid var(--orders-line);
+  border-radius: 18px;
+}
+
+.orders-page .orders-queue-heading {
+  margin-bottom: 10px;
+  padding: 2px 3px 12px;
+  border-bottom: 1px solid var(--orders-line);
+}
+
+.orders-page .orders-queue-heading p {
+  margin: 0 0 2px;
+  color: var(--orders-muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+}
+
+.orders-page .orders-queue-heading h2 {
+  margin: 0;
+  color: var(--orders-ink);
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.orders-page .orders-queue-list {
+  display: grid;
+  gap: 7px;
+}
+
+.orders-page .order-queue-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  padding: 10px;
+  color: var(--orders-ink);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.orders-page .order-queue-card:hover {
+  background: #fff8f5;
+  border-color: var(--orders-line);
+}
+
+.orders-page .order-queue-card.is-selected {
+  background: var(--orders-red-soft);
+  border-color: rgba(173, 45, 74, 0.25);
+}
+
+.orders-page .order-queue-status {
+  min-width: 58px;
+  padding: 5px 6px;
+  color: var(--orders-red);
+  background: rgba(173, 45, 74, 0.1);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.orders-page .order-queue-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.orders-page .order-queue-main strong {
+  overflow: hidden;
+  color: var(--orders-ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orders-page .order-queue-main small {
+  color: var(--orders-muted);
+  font-size: 11px;
+}
+
+.orders-page .order-queue-total {
+  color: var(--orders-red);
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.orders-page .orders-detail .current-order-card {
+  min-height: 100%;
+}
+
+.orders-page .order-tracking {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--orders-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.orders-page .order-tracking summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 10px 12px;
+  color: var(--orders-blue);
+  background: #f4f8fa;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.orders-page .order-tracking summary::-webkit-details-marker {
+  display: none;
+}
+
+.orders-page .order-tracking summary::after {
+  color: var(--orders-blue);
+  content: "+";
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.orders-page .order-tracking[open] summary {
+  border-bottom: 1px solid var(--orders-line);
+}
+
+.orders-page .order-tracking[open] summary::after {
+  content: "−";
+}
+
+.orders-page .status-timeline {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 12px;
+}
+
+.orders-page .status-timeline li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 8px;
+  color: var(--orders-muted);
+  background: #fffaf7;
+  border: 1px solid #f0e3de;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.orders-page .status-timeline li span {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: #dfd4cf;
+}
+
+.orders-page .status-timeline li.done,
+.orders-page .status-timeline li.current {
+  color: var(--orders-ink);
+  background: var(--orders-red-soft);
+  border-color: rgba(173, 45, 74, 0.2);
+}
+
+.orders-page .status-timeline li.done span,
+.orders-page .status-timeline li.current span {
+  background: var(--orders-red);
+}
+
+.orders-page .history-list {
+  gap: 8px;
+}
+
+.orders-page .history-card:not(.order-tracking) {
+  background: rgba(255, 253, 251, 0.86);
+  border-color: var(--orders-line);
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.orders-page .history-card:not(.order-tracking) summary {
+  padding: 11px 13px;
+  background: transparent;
+}
+
+.orders-page .history-card:not(.order-tracking) summary strong {
+  color: var(--orders-ink);
+  font-size: 13px;
+}
+
+.orders-page .history-total {
+  color: var(--orders-red);
+  font-size: 13px;
+}
+
+.orders-page .history-detail {
+  gap: 8px;
+  padding: 0 13px 13px;
+  font-size: 13px;
+}
+
+.orders-page .history-detail p,
+.orders-page .history-detail li,
+.orders-page .location-display {
+  color: var(--orders-muted);
+  font-size: 12px;
+}
+
+.orders-page .history-card li strong,
+.orders-page .location-display a {
+  color: var(--orders-blue);
+}
+
+.orders-page .whatsapp-order {
+  background:
+    linear-gradient(135deg, rgba(47, 108, 137, 0.09), transparent 58%),
+    var(--orders-card);
+  border-color: rgba(47, 108, 137, 0.22);
+  border-left-color: var(--orders-blue);
+}
+
+.orders-page .whatsapp-order .current-order-head h2,
+.orders-page .whatsapp-order-note {
+  color: var(--orders-blue);
+}
+
+.orders-page .whatsapp-order-note {
+  padding: 10px 12px;
+  background: #f1f7fa;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.orders-page .whatsapp-order-items {
+  padding: 10px 12px;
+  background: #fffaf7;
+  border: 1px solid var(--orders-line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.orders-page .client-code {
+  padding: 13px;
+  background: #fffaf1;
+  border-color: var(--orders-gold);
+  border-radius: 12px;
+}
+
+.orders-page .client-code strong {
+  color: var(--orders-red);
+  font-size: 27px;
+}
+
+.orders-page .client-code small {
+  color: var(--orders-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 860px) {
+  .orders-page .section {
+    width: min(100% - 22px, 860px);
+  }
+
+  .orders-page .orders-workspace {
+    display: block;
+  }
+
+  .orders-page .orders-queue {
+    padding: 0;
+    background: transparent;
+    border: 0;
+  }
+
+  .orders-page .orders-queue-heading {
+    margin: 0 2px 10px;
+    padding: 0 0 9px;
+  }
+
+  .orders-page .orders-detail {
+    display: none;
+  }
+
+  .orders-page .current-orders {
+    display: grid;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .orders-page .section {
+    width: min(100% - 18px, 860px);
+    padding-top: 16px;
+  }
+
+  .orders-page .orders-hero {
+    min-height: 112px;
+    padding: 17px;
+    border-radius: 18px;
+  }
+
+  .orders-page .orders-hero h1 {
+    font-size: 29px;
+  }
+
+  .orders-page .orders-copy {
+    max-width: 210px;
+    font-size: 12px;
+  }
+
+  .orders-page .orders-hero-orbit {
+    width: 58px;
+    height: 58px;
+    margin-right: 0;
+  }
+
+  .orders-page .orders-hero-orbit::before {
+    top: 13px;
+    left: 13px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .orders-page .current-order-card {
+    padding: 14px;
+    border-radius: 15px;
+  }
+
+  .orders-page .current-order-head strong {
+    width: max-content;
+  }
+
+  .orders-page .order-tracking summary {
+    min-height: 38px;
+    padding: 9px 10px;
+  }
+
+  .orders-page .status-timeline {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .orders-page .status-timeline li {
+    min-height: 34px;
+    font-size: 10px;
+  }
+
+  .orders-page .page-title-small {
+    margin-top: 20px;
+  }
+}

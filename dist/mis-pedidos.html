@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
@@ -35,12 +35,20 @@
 
       <section class="notice" id="historyNotice"></section>
 
-      <div class="page-title page-title-small" id="currentOrdersHeading" hidden>
-        <div>
-          <p class="section-kicker">En atención</p>
-          <h2>Pedidos en curso</h2>
-        </div>
-      </div>
+      <section class="orders-workspace" id="ordersWorkspace" hidden>
+        <aside class="orders-queue">
+          <div class="orders-queue-heading">
+            <p>EN ATENCI�N</p>
+            <h2>Pedidos en curso</h2>
+          </div>
+          <section
+            class="orders-queue-list"
+            id="currentOrders"
+          ></section>
+        </aside>
+
+        <section class="orders-detail" id="currentOrderDetail" hidden></section>
+      </section>
       <section class="current-orders" id="currentOrders" hidden></section>
 
       <div class="page-title page-title-small" id="completedOrdersHeading" hidden>

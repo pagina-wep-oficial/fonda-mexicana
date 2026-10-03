@@ -1,4 +1,4 @@
-let activeWhatsappNumber = "";
+﻿let activeWhatsappNumber = "";
 let activeStoreLiveUrl = "";
 let storeLiveSocket = null;
 let storeLiveRetry = 0;
@@ -3721,8 +3721,53 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
     }
   });
 }
+let selectedManagedOrderId = "";
+
+function orderShortId(order) {
+  return String(order?.id || "")
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 8)
+    .toUpperCase();
+}
+
+function orderCompactDate(order) {
+  return new Date(order.createdAt).toLocaleString("es-MX", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function managedOrderQueueCard(order, selectedOrderId) {
+  const status = statusInfo(order);
+  const isSelected = order.id === selectedOrderId;
+
+  return `
+    <button
+      class="order-queue-card${isSelected ? " is-selected" : ""}"
+      type="button"
+      data-order-select="${escapeHtml(order.id)}"
+      aria-pressed="${isSelected ? "true" : "false"}"
+    >
+      <span class="order-queue-status">
+        ${escapeHtml(status.label)}
+      </span>
+
+      <span class="order-queue-main">
+        <strong>Pedido #${escapeHtml(orderShortId(order))}</strong>
+        <small>${escapeHtml(orderCompactDate(order))}</small>
+      </span>
+
+      <span class="order-queue-total">
+        ${money(order.total)}
+      </span>
+    </button>
+  `;
+}
+
 function completedOrderCard(order) {
-  const created = new Date(order.createdAt).toLocaleString("es-MX");
+  const created = orderCompactDate(order);
   const items = Array.isArray(order.items) ? order.items : [];
   const itemCount = items.reduce(
     (sum, item) => sum + Number(item.quantity || 0),
@@ -3734,21 +3779,23 @@ function completedOrderCard(order) {
     <details class="history-card">
       <summary>
         <span>
-          <small>${escapeHtml(order.id)}</small>
-          <strong>${escapeHtml(order.customerName)}</strong>
-          <em>${created} · ${escapeHtml(status.label)}</em>
+          <small>Pedido #${escapeHtml(orderShortId(order))}</small>
+          <strong>${escapeHtml(status.label)}</strong>
+          <em>${created} · ${itemCount} producto${itemCount === 1 ? "" : "s"}</em>
         </span>
         <span class="history-total">${money(order.total)}</span>
       </summary>
+
       <div class="history-detail">
         <p>
-          ${escapeHtml(order.shippingType)} ·
-          ${itemCount} producto${itemCount === 1 ? "" : "s"}
+          ${escapeHtml(order.shippingType)}
         </p>
+
         <p>
           <strong>Pago:</strong>
           ${escapeHtml(order.paymentStatus || "Pago por confirmar")}
         </p>
+
         <ul>
           ${items.map((item) => `
             <li>
@@ -3757,6 +3804,7 @@ function completedOrderCard(order) {
             </li>
           `).join("")}
         </ul>
+
         <div>
           <strong>Ubicación</strong>
           ${locationDisplayHtml(order.locationText)}
@@ -3767,13 +3815,18 @@ function completedOrderCard(order) {
 }
 
 function renderHistory(historyInput) {
+  const workspace = document.getElementById("ordersWorkspace");
   const currentHolder = document.getElementById("currentOrders");
+  const detailHolder = document.getElementById("currentOrderDetail");
   const completedHolder = document.getElementById("completedOrders");
   const whatsappHolder = document.getElementById("whatsappOrders");
 
-  const currentHeading = document.getElementById("currentOrdersHeading");
-  const completedHeading = document.getElementById("completedOrdersHeading");
-  const whatsappHeading = document.getElementById("whatsappOrdersHeading");
+  const completedHeading = document.getElementById(
+    "completedOrdersHeading"
+  );
+  const whatsappHeading = document.getElementById(
+    "whatsappOrdersHeading"
+  );
   const clearWhatsappButton = document.getElementById(
     "clearWhatsappHistoryBtn"
   );
@@ -3794,15 +3847,68 @@ function renderHistory(historyInput) {
 
   const whatsappOrders = history.filter(isWhatsappOrder);
 
-  if (currentHeading) {
-    currentHeading.hidden = currentOrders.length === 0;
+  const desktopLayout = window.matchMedia(
+    "(min-width: 861px)"
+  ).matches;
+
+  if (workspace) {
+    workspace.hidden = currentOrders.length === 0;
+  }
+
+  if (
+    selectedManagedOrderId &&
+    !currentOrders.some(
+      (order) => order.id === selectedManagedOrderId
+    )
+  ) {
+    selectedManagedOrderId = "";
+  }
+
+  if (!selectedManagedOrderId && currentOrders.length) {
+    selectedManagedOrderId = currentOrders[0].id;
   }
 
   if (currentHolder) {
-    currentHolder.hidden = currentOrders.length === 0;
-    currentHolder.innerHTML = currentOrders
-      .map(currentOrderCard)
-      .join("");
+    if (desktopLayout) {
+      currentHolder.innerHTML = currentOrders
+        .map((order) =>
+          managedOrderQueueCard(
+            order,
+            selectedManagedOrderId
+          )
+        )
+        .join("");
+    } else {
+      currentHolder.innerHTML = currentOrders
+        .map(currentOrderCard)
+        .join("");
+    }
+  }
+
+  if (detailHolder) {
+    const selectedOrder = currentOrders.find(
+      (order) => order.id === selectedManagedOrderId
+    );
+
+    detailHolder.hidden = !desktopLayout || !selectedOrder;
+
+    detailHolder.innerHTML =
+      desktopLayout && selectedOrder
+        ? currentOrderCard(selectedOrder)
+        : "";
+  }
+
+  if (desktopLayout && currentHolder) {
+    currentHolder
+      .querySelectorAll("[data-order-select]")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedManagedOrderId =
+            button.dataset.orderSelect || "";
+
+          renderHistory(history);
+        });
+      });
   }
 
   if (completedHeading) {
@@ -3831,7 +3937,6 @@ function renderHistory(historyInput) {
     clearWhatsappButton.hidden = whatsappOrders.length === 0;
   }
 }
-
 function timelineHtml(order) {
   const flow = orderFlow(order);
   const current = statusIndex(order);
