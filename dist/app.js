@@ -322,14 +322,32 @@ function disconnectStoreLive() {
 
 const ORDER_FLOWS = {
   pickup: [
-    { id: "nuevo", label: "Recibido", client: "Pedido recibido" },
+    {
+      id: "nuevo",
+      label: "Pedido recibido",
+      client: "Pedido recibido · Esperando confirmación de pago"
+    },
+    {
+      id: "pagado",
+      label: "Pago confirmado",
+      client: "Pago confirmado · Esperando atención de la tienda"
+    },
     { id: "aceptado", label: "Aceptado", client: "Pedido aceptado" },
     { id: "alistando", label: "Alistando", client: "Estamos alistando tu pedido" },
     { id: "listo", label: "Listo para recoger", client: "Ya puedes pasar a buscarlo" },
     { id: "retirado", label: "Retirado", client: "Pedido retirado" }
   ],
   delivery: [
-    { id: "nuevo", label: "Recibido", client: "Pedido recibido" },
+    {
+      id: "nuevo",
+      label: "Pedido recibido",
+      client: "Pedido recibido · Esperando confirmación de pago"
+    },
+    {
+      id: "pagado",
+      label: "Pago confirmado",
+      client: "Pago confirmado · Esperando atención de la tienda"
+    },
     { id: "aceptado", label: "Aceptado", client: "Pedido aceptado" },
     { id: "alistando", label: "Alistando", client: "Estamos alistando tu pedido" },
     { id: "listo", label: "Listo para enviar", client: "Pedido listo para enviar" },
@@ -346,7 +364,7 @@ const LEGACY_STATUS_MAP = { preparando: "alistando" };
 // Estados de Neon traducidos al flujo que ya entiende la linea de tiempo.
 const SERVER_STATUS_MAP = {
   pending: "nuevo",
-  paid: "aceptado",
+  paid: "pagado",
   accepted: "aceptado",
   preparing: "alistando",
   ready_for_delivery: "listo",
@@ -3703,54 +3721,115 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
     }
   });
 }
+function completedOrderCard(order) {
+  const created = new Date(order.createdAt).toLocaleString("es-MX");
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemCount = items.reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
+  const status = statusInfo(order);
+
+  return `
+    <details class="history-card">
+      <summary>
+        <span>
+          <small>${escapeHtml(order.id)}</small>
+          <strong>${escapeHtml(order.customerName)}</strong>
+          <em>${created} · ${escapeHtml(status.label)}</em>
+        </span>
+        <span class="history-total">${money(order.total)}</span>
+      </summary>
+      <div class="history-detail">
+        <p>
+          ${escapeHtml(order.shippingType)} ·
+          ${itemCount} producto${itemCount === 1 ? "" : "s"}
+        </p>
+        <p>
+          <strong>Pago:</strong>
+          ${escapeHtml(order.paymentStatus || "Pago por confirmar")}
+        </p>
+        <ul>
+          ${items.map((item) => `
+            <li>
+              ${item.quantity} x ${escapeHtml(item.name)}
+              <strong>${money(item.price * item.quantity)}</strong>
+            </li>
+          `).join("")}
+        </ul>
+        <div>
+          <strong>Ubicación</strong>
+          ${locationDisplayHtml(order.locationText)}
+        </div>
+      </div>
+    </details>
+  `;
+}
+
 function renderHistory(historyInput) {
-  const holder = document.getElementById("historyList");
   const currentHolder = document.getElementById("currentOrders");
-  if (!holder && !currentHolder) return;
-  const history = Array.isArray(historyInput) ? historyInput : getHistory();
-  const activeOrders = history.filter(isActiveOrder);
+  const completedHolder = document.getElementById("completedOrders");
+  const whatsappHolder = document.getElementById("whatsappOrders");
+
+  const currentHeading = document.getElementById("currentOrdersHeading");
+  const completedHeading = document.getElementById("completedOrdersHeading");
+  const whatsappHeading = document.getElementById("whatsappOrdersHeading");
+  const clearWhatsappButton = document.getElementById(
+    "clearWhatsappHistoryBtn"
+  );
+
+  const history = Array.isArray(historyInput)
+    ? historyInput
+    : getHistory();
+
+  const managedOrders = history.filter(
+    (order) => !isWhatsappOrder(order)
+  );
+
+  const currentOrders = managedOrders.filter(isActiveOrder);
+
+  const completedOrders = managedOrders.filter(
+    (order) => !isActiveOrder(order)
+  );
+
+  const whatsappOrders = history.filter(isWhatsappOrder);
+
+  if (currentHeading) {
+    currentHeading.hidden = currentOrders.length === 0;
+  }
 
   if (currentHolder) {
-    currentHolder.innerHTML = activeOrders.length
-      ? activeOrders.map(currentOrderCard).join("")
-      : `<div class="empty-state">No hay pedidos en curso en este navegador.</div>`;
+    currentHolder.hidden = currentOrders.length === 0;
+    currentHolder.innerHTML = currentOrders
+      .map(currentOrderCard)
+      .join("");
   }
 
-  if (!holder) return;
-  if (!history.length) {
-    holder.innerHTML = `<div class="empty-state">Aun no hay pedidos guardados en este navegador.</div>`;
-    return;
+  if (completedHeading) {
+    completedHeading.hidden = completedOrders.length === 0;
   }
 
-  holder.innerHTML = history
-    .map((order) => {
-      const created = new Date(order.createdAt).toLocaleString("es-MX");
-      const items = order.items.map((item) => `<li>${item.quantity} x ${escapeHtml(item.name)} <strong>${money(item.price * item.quantity)}</strong></li>`).join("");
-      const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
-      const status = statusInfo(order);
-      return `
-        <details class="history-card">
-          <summary>
-            <span>
-              <small>${order.id}</small>
-              <strong>${escapeHtml(order.customerName)}</strong>
-              <em>${created} · ${status.label}</em>
-            </span>
-            <span class="history-total">${money(order.total)}</span>
-          </summary>
-          <div class="history-detail">
-            <p>${escapeHtml(order.shippingType)} · ${itemCount} producto${itemCount === 1 ? "" : "s"}</p>
-            <p><strong>Pago:</strong> ${escapeHtml(order.paymentStatus || "Pago por confirmar")}</p>
-            <ul>${items}</ul>
-            <div>
-              <strong>Ubicacion</strong>
-              ${locationDisplayHtml(order.locationText)}
-            </div>
-          </div>
-        </details>
-      `;
-    })
-    .join("");
+  if (completedHolder) {
+    completedHolder.hidden = completedOrders.length === 0;
+    completedHolder.innerHTML = completedOrders
+      .map(completedOrderCard)
+      .join("");
+  }
+
+  if (whatsappHeading) {
+    whatsappHeading.hidden = whatsappOrders.length === 0;
+  }
+
+  if (whatsappHolder) {
+    whatsappHolder.hidden = whatsappOrders.length === 0;
+    whatsappHolder.innerHTML = whatsappOrders
+      .map(whatsappOrderCard)
+      .join("");
+  }
+
+  if (clearWhatsappButton) {
+    clearWhatsappButton.hidden = whatsappOrders.length === 0;
+  }
 }
 
 function timelineHtml(order) {
@@ -3822,8 +3901,13 @@ function currentOrderCard(order) {
   if (isWhatsappOrder(order)) return whatsappOrderCard(order);
 
   const created = new Date(order.createdAt).toLocaleString("es-MX");
-  const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemCount = items.reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
   const status = statusInfo(order);
+
   return `
     <article class="current-order-card">
       <div class="current-order-head">
@@ -3834,7 +3918,18 @@ function currentOrderCard(order) {
         </div>
         <strong>${money(order.total)}</strong>
       </div>
-      ${timelineHtml(order)}
+
+      <div class="current-order-grid">
+        <span>${itemCount} producto${itemCount === 1 ? "" : "s"}</span>
+        <span>${escapeHtml(order.shippingType)}</span>
+        <span>${escapeHtml(order.paymentStatus || "Pago por confirmar")}</span>
+      </div>
+
+      <details class="history-card order-tracking">
+        <summary>Ver seguimiento</summary>
+        ${timelineHtml(order)}
+      </details>
+
       ${!isPickupOrder(order) && order.deliveryCode && isActiveOrder(order) ? `
         <div class="client-code">
           <span>Codigo de entrega</span>
@@ -3842,11 +3937,6 @@ function currentOrderCard(order) {
           <small>Muestraselo al repartidor cuando te lo pida.</small>
         </div>
       ` : ""}
-      <div class="current-order-grid">
-        <span>${itemCount} producto${itemCount === 1 ? "" : "s"}</span>
-        <span>${escapeHtml(order.shippingType)}</span>
-        <span>${escapeHtml(order.paymentStatus || "Pago por confirmar")}</span>
-      </div>
     </article>
   `;
 }
@@ -3975,7 +4065,10 @@ async function refreshHistoryView() {
   const serverOrders = await loadCustomerServerOrders();
 
   renderHistory(mergeOrderSources(localHistory, serverOrders));
-  renderCustomerOrderNotice(serverOrders.length, localHistory.length);
+  renderCustomerOrderNotice(
+    serverOrders.length,
+    localHistory.filter(isWhatsappOrder).length
+  );
 }
 
 function renderCustomerOrderNotice(serverCount, localCount) {
@@ -3985,28 +4078,41 @@ function renderCustomerOrderNotice(serverCount, localCount) {
   if (!customerSession?.idToken) {
     holder.innerHTML = `
       <p class="muted">
-        Inicia sesion para ver tus pedidos con codigo, su estado en vivo y el codigo de entrega.
+        Inicia sesión para consultar tus pedidos y su seguimiento.
       </p>
     `;
     return;
   }
 
   if (!serverCount && !localCount) {
-    holder.innerHTML = `<p class="muted">Aun no tienes pedidos registrados.</p>`;
+    holder.innerHTML = `
+      <p class="muted">
+        Aún no tienes pedidos registrados.
+      </p>
+    `;
     return;
   }
 
   holder.innerHTML = `
     <p class="muted">
-      ${serverCount} pedido${serverCount === 1 ? "" : "s"} desde la tienda
-      ${localCount ? ` y ${localCount} por WhatsApp en este navegador.` : "."}
+      ${serverCount
+        ? `${serverCount} pedido${serverCount === 1 ? "" : "s"} de tu cuenta`
+        : "Sin pedidos de tu cuenta"
+      }${localCount
+        ? ` · ${localCount} pedido${localCount === 1 ? "" : "s"} enviado${localCount === 1 ? "" : "s"} por WhatsApp`
+        : "."
+      }
     </p>
   `;
 }
 
 function initHistory() {
   renderHistory();
-  renderCustomerOrderNotice(0, getHistory().length);
+
+  renderCustomerOrderNotice(
+    0,
+    getHistory().filter(isWhatsappOrder).length
+  );
 
   // El token de Firebase se restaura de forma asincrona; los pedidos de Neon
   // solo se piden cuando ya hay sesion.
@@ -4015,11 +4121,17 @@ function initHistory() {
     await refreshHistoryView();
   })();
 
-  document.getElementById("clearHistoryBtn")?.addEventListener("click", () => {
-    setHistory([]);
-    renderHistory();
-    renderCustomerOrderNotice(0, 0);
-  });
+  document
+    .getElementById("clearWhatsappHistoryBtn")
+    ?.addEventListener("click", () => {
+      setHistory(
+        getHistory().filter(
+          (order) => !isWhatsappOrder(order)
+        )
+      );
+
+      void refreshHistoryView();
+    });
 }
 
 function localOrderCard(order) {

@@ -27,17 +27,41 @@
           <p class="section-kicker">Seguimiento</p>
           <h1>Mis pedidos</h1>
         </div>
-        <button class="button danger" id="clearHistoryBtn" type="button">Borrar pedidos</button>
       </div>
+
       <section class="notice" id="historyNotice"></section>
-      <section class="current-orders" id="currentOrders"></section>
-      <div class="page-title page-title-small">
+
+      <div class="page-title page-title-small" id="currentOrdersHeading" hidden>
         <div>
-          <p class="section-kicker">Registro</p>
-          <h2>Historial del dispositivo</h2>
+          <p class="section-kicker">En atención</p>
+          <h2>Pedidos en curso</h2>
         </div>
       </div>
-      <section class="history-list" id="historyList"></section>
+      <section class="current-orders" id="currentOrders" hidden></section>
+
+      <div class="page-title page-title-small" id="completedOrdersHeading" hidden>
+        <div>
+          <p class="section-kicker">Compras anteriores</p>
+          <h2>Historial de pedidos</h2>
+        </div>
+      </div>
+      <section class="history-list" id="completedOrders" hidden></section>
+
+      <div class="page-title page-title-small" id="whatsappOrdersHeading" hidden>
+        <div>
+          <p class="section-kicker">Conversaciones</p>
+          <h2>Pedidos por WhatsApp</h2>
+        </div>
+        <button
+          class="button danger"
+          id="clearWhatsappHistoryBtn"
+          type="button"
+          hidden
+        >
+          Borrar historial de WhatsApp
+        </button>
+      </div>
+      <section class="current-orders" id="whatsappOrders" hidden></section>
     </main>
 
     <script src="app.js"></script>
