@@ -359,6 +359,15 @@ const ORDER_FLOWS = {
   ]
 };
 
+const MANAGED_DELIVERY_FLOW = ORDER_FLOWS.delivery.filter(
+  (step) =>
+    ![
+      "asignado",
+      "aceptado-repartidor",
+      "recogido"
+    ].includes(step.id)
+);
+
 const CANCELLED_STATUS = "cancelado";
 const LEGACY_STATUS_MAP = { preparando: "alistando" };
 // Estados de Neon traducidos al flujo que ya entiende la linea de tiempo.
@@ -1350,7 +1359,13 @@ function isPickupOrder(order) {
 }
 
 function orderFlow(order) {
-  return isPickupOrder(order) ? ORDER_FLOWS.pickup : ORDER_FLOWS.delivery;
+  if (order?.fromServer === true && !isPickupOrder(order)) {
+    return MANAGED_DELIVERY_FLOW;
+  }
+
+  return isPickupOrder(order)
+    ? ORDER_FLOWS.pickup
+    : ORDER_FLOWS.delivery;
 }
 
 function statusIndex(order, status = orderStatus(order)) {
@@ -4030,6 +4045,12 @@ function currentOrderCard(order) {
         <span>${escapeHtml(order.paymentStatus || "Pago por confirmar")}</span>
       </div>
 
+      ${order.deliveryNotice && order.status === "listo" ? `
+        <p class="delivery-assignment-notice">
+          ${escapeHtml(order.deliveryNotice)}
+        </p>
+      ` : ""}
+
       <details class="history-card order-tracking">
         <summary>Ver seguimiento</summary>
         ${timelineHtml(order)}
@@ -4074,6 +4095,29 @@ async function loadCustomerServerOrders() {
   }
 }
 
+function deliveryAssignmentNotice(order) {
+  const timeline = Array.isArray(order.timeline)
+    ? order.timeline
+    : [];
+
+  const event = [...timeline]
+    .reverse()
+    .find(
+      (entry) =>
+        entry &&
+        (
+          entry.type === "assignment" ||
+          entry.type === "claim"
+        )
+    );
+
+  if (!event) return "";
+
+  return event.type === "claim"
+    ? "Un repartidor aceptó tu entrega."
+    : "La tienda asignó un repartidor a tu pedido.";
+}
+
 function serverOrderToLocal(order) {
   const items = (order.items || []).map((item) => ({
     id: item.product_id,
@@ -4108,6 +4152,7 @@ function serverOrderToLocal(order) {
     paymentStatus:
       order.payment_status === "paid" ? "Pago confirmado con codigo" : "Pago por confirmar",
     deliveryCode: order.delivery_code || "",
+    deliveryNotice: deliveryAssignmentNotice(order),
     total: Number(order.subtotal) || 0,
     message: "",
     fromServer: true,
