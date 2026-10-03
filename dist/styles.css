@@ -3791,13 +3791,4 @@ textarea:focus {
     margin-top: 20px;
   }
 }
-.orders-page .delivery-assignment-notice {
-  margin: 0;
-  padding: 9px 11px;
-  color: var(--orders-blue);
-  background: #f1f7fa;
-  border: 1px solid rgba(47, 108, 137, 0.2);
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 800;
-}
+

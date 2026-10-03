@@ -332,10 +332,26 @@ const ORDER_FLOWS = {
       label: "Pago confirmado",
       client: "Pago confirmado · Esperando atención de la tienda"
     },
-    { id: "aceptado", label: "Aceptado", client: "Pedido aceptado" },
-    { id: "alistando", label: "Alistando", client: "Estamos alistando tu pedido" },
-    { id: "listo", label: "Listo para recoger", client: "Ya puedes pasar a buscarlo" },
-    { id: "retirado", label: "Retirado", client: "Pedido retirado" }
+    {
+      id: "aceptado",
+      label: "Pedido confirmado",
+      client: "Pedido confirmado por la tienda"
+    },
+    {
+      id: "alistando",
+      label: "En preparación",
+      client: "Tu pedido está en preparación"
+    },
+    {
+      id: "listo",
+      label: "Listo para recoger",
+      client: "Ya puedes pasar a buscarlo"
+    },
+    {
+      id: "retirado",
+      label: "Retirado",
+      client: "Pedido retirado"
+    }
   ],
   delivery: [
     {
@@ -348,24 +364,51 @@ const ORDER_FLOWS = {
       label: "Pago confirmado",
       client: "Pago confirmado · Esperando atención de la tienda"
     },
-    { id: "aceptado", label: "Aceptado", client: "Pedido aceptado" },
-    { id: "alistando", label: "Alistando", client: "Estamos alistando tu pedido" },
-    { id: "listo", label: "Listo para enviar", client: "Pedido listo para enviar" },
-    { id: "asignado", label: "Repartidor asignado", client: "Repartidor asignado" },
-    { id: "aceptado-repartidor", label: "Aceptado por repartidor", client: "Tu repartidor va en camino a recoger el pedido" },
-    { id: "recogido", label: "Pedido recogido", client: "Pedido recogido" },
-    { id: "en-camino", label: "En camino", client: "Tu pedido va en camino" },
-    { id: "entregado", label: "Entregado", client: "Pedido entregado" }
+    {
+      id: "aceptado",
+      label: "Pedido confirmado",
+      client: "Pedido confirmado por la tienda"
+    },
+    {
+      id: "alistando",
+      label: "En preparación",
+      client: "Tu pedido está en preparación"
+    },
+    {
+      id: "listo",
+      label: "Listo para entrega",
+      client: "Pedido listo para entrega"
+    },
+    {
+      id: "asignado",
+      label: "Repartidor asignado",
+      client: "Repartidor asignado"
+    },
+    {
+      id: "aceptado-repartidor",
+      label: "Repartidor asignado",
+      client: "Tu repartidor ya fue asignado"
+    },
+    {
+      id: "recogido",
+      label: "Pedido recogido",
+      client: "Pedido recogido"
+    },
+    {
+      id: "en-camino",
+      label: "En camino",
+      client: "Tu pedido va en camino"
+    },
+    {
+      id: "entregado",
+      label: "Entregado",
+      client: "Pedido entregado"
+    }
   ]
 };
 
 const MANAGED_DELIVERY_FLOW = ORDER_FLOWS.delivery.filter(
-  (step) =>
-    ![
-      "asignado",
-      "aceptado-repartidor",
-      "recogido"
-    ].includes(step.id)
+  (step) => !["asignado", "recogido"].includes(step.id)
 );
 
 const CANCELLED_STATUS = "cancelado";
@@ -1345,12 +1388,24 @@ function renderCheckoutPaymentOptions() {
 }
 function orderStatus(order) {
   const rawStatus = LEGACY_STATUS_MAP[order.status] || order.status || "nuevo";
+
+  if (
+    order?.fromServer === true &&
+    !isPickupOrder(order) &&
+    rawStatus === "listo" &&
+    hasDeliveryClaim(order)
+  ) {
+    return "aceptado-repartidor";
+  }
+
   if (order.shippingType === "Pasar a buscar" && !ORDER_FLOWS.pickup.some((entry) => entry.id === rawStatus)) {
     return rawStatus === "entregado" ? "retirado" : "listo";
   }
+
   if (order.shippingType !== "Pasar a buscar" && rawStatus === "retirado") {
     return "entregado";
   }
+
   return rawStatus;
 }
 
@@ -1366,6 +1421,14 @@ function orderFlow(order) {
   return isPickupOrder(order)
     ? ORDER_FLOWS.pickup
     : ORDER_FLOWS.delivery;
+}
+
+function hasDeliveryClaim(order) {
+  if (Array.isArray(order?.timeline)) {
+    return order.timeline.some((entry) => entry?.type === "claim");
+  }
+
+  return order?.deliveryClaimed === true;
 }
 
 function statusIndex(order, status = orderStatus(order)) {
@@ -4045,12 +4108,6 @@ function currentOrderCard(order) {
         <span>${escapeHtml(order.paymentStatus || "Pago por confirmar")}</span>
       </div>
 
-      ${order.deliveryNotice && order.status === "listo" ? `
-        <p class="delivery-assignment-notice">
-          ${escapeHtml(order.deliveryNotice)}
-        </p>
-      ` : ""}
-
       <details class="history-card order-tracking">
         <summary>Ver seguimiento</summary>
         ${timelineHtml(order)}
@@ -4095,29 +4152,6 @@ async function loadCustomerServerOrders() {
   }
 }
 
-function deliveryAssignmentNotice(order) {
-  const timeline = Array.isArray(order.timeline)
-    ? order.timeline
-    : [];
-
-  const event = [...timeline]
-    .reverse()
-    .find(
-      (entry) =>
-        entry &&
-        (
-          entry.type === "assignment" ||
-          entry.type === "claim"
-        )
-    );
-
-  if (!event) return "";
-
-  return event.type === "claim"
-    ? "Un repartidor aceptó tu entrega."
-    : "La tienda asignó un repartidor a tu pedido.";
-}
-
 function serverOrderToLocal(order) {
   const items = (order.items || []).map((item) => ({
     id: item.product_id,
@@ -4152,7 +4186,7 @@ function serverOrderToLocal(order) {
     paymentStatus:
       order.payment_status === "paid" ? "Pago confirmado con codigo" : "Pago por confirmar",
     deliveryCode: order.delivery_code || "",
-    deliveryNotice: deliveryAssignmentNotice(order),
+    deliveryClaimed: hasDeliveryClaim(order),
     total: Number(order.subtotal) || 0,
     message: "",
     fromServer: true,
@@ -4170,9 +4204,9 @@ function serverTimelineToLocal(order) {
 
   const labels = {
     paid: "Pago confirmado",
-    accepted: "Pedido aceptado por la tienda",
-    preparing: "La tienda esta preparando tu pedido",
-    ready_for_delivery: "Tu pedido esta listo",
+    accepted: "Pedido confirmado por la tienda",
+    preparing: "Pedido en preparación",
+    ready_for_delivery: "Pedido listo para entrega",
     shipping: "Tu pedido va en camino",
     delivered: "Pedido entregado",
     cancelled: "Pedido cancelado",
@@ -4180,10 +4214,18 @@ function serverTimelineToLocal(order) {
   };
 
   const events = timeline
-    .filter((entry) => entry && labels[entry.status])
+    .filter(
+      (entry) =>
+        entry &&
+        entry.type !== "assignment" &&
+        (entry.type === "claim" || labels[entry.status])
+    )
     .map((entry) => ({
       at: entry.at || order.created_at,
-      text: labels[entry.status]
+      text:
+        entry.type === "claim"
+          ? "Repartidor asignado"
+          : labels[entry.status]
     }))
     .sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
 
