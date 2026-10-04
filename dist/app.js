@@ -25,6 +25,7 @@ const ITM_ORDERS_URL =
 const ITM_PROFILE_URL =
   `https://itm-void-excepcional.pages.dev/api/store-customer-profile?project_id=${encodeURIComponent(ITM_PROJECT_ID)}`;
 const ITM_MY_ORDERS_URL = `${ITM_ORDERS_URL}&mine=1`;
+const ITM_DELIVERY_LOCATION_URL = `${ITM_BASE_URL}/api/store-delivery-location`;
 const STORE_CONFIG_URL = "/store-config.json";
 const CATALOG_VIEW_KEY = `itm.catalog.view:${ITM_PROJECT_ID}`;
 
@@ -52,6 +53,36 @@ function applyStorePaymentSettings(settings = {}) {
   )
     ? settings.default_payment_method
     : enabledPaymentMethods[0];
+}
+function applyStorePickupSettings(pickup = {}) {
+  const name = String(pickup.name || '').trim();
+  const phone = String(pickup.phone || '').trim();
+  const address = String(pickup.address || '').trim();
+  const notes = String(pickup.notes || '').trim();
+  const lat = Number(pickup.latitude);
+  const lon = Number(pickup.longitude);
+  if (name) STORE_LOCATION.name = name;
+  if (phone) STORE_LOCATION.phone = phone;
+  if (notes) STORE_LOCATION.notes = notes;
+
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    STORE_LOCATION.address = name || "Ubicación exacta configurada";
+    STORE_LOCATION.latitude = lat;
+    STORE_LOCATION.longitude = lon;
+    STORE_LOCATION.directionsUrl =
+      "https://www.google.com/maps/dir/?api=1&destination=" +
+      lat +
+      "," +
+      lon +
+      "&travelmode=driving";
+  } else if (address) {
+    STORE_LOCATION.address = address;
+    STORE_LOCATION.directionsUrl =
+      "https://www.google.com/maps/dir/?api=1&destination=" +
+      encodeURIComponent(address) +
+      "&travelmode=driving";
+  }
+  renderStorePickupUi();
 }
 
 let customerSession = null;
@@ -751,7 +782,7 @@ function locationDisplayHtml(locationText) {
     ? location.lines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")
     : "<span>Sin ubicacion guardada</span>";
   const link = location.url
-    ? `<a href="${escapeHtml(location.url)}" target="_blank" rel="noopener">Abrir ubicacion</a>`
+    ? `<a href="${escapeHtml(location.url)}" target="_blank" rel="noopener">Cómo llegar</a>`
     : "";
   return `<div class="location-display">${lines}${link}</div>`;
 }
@@ -2398,7 +2429,10 @@ async function initCatalog() {
     saveCatalogViewState();
   };
 
-  window.addEventListener("pagehide", persistCatalogView);
+  window.addEventListener("pagehide", () => {
+    stopCustomerTracking();
+    persistCatalogView();
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
@@ -2776,7 +2810,7 @@ function formatCoords(latitude, longitude) {
 }
 
 function mapsLink(latitude, longitude) {
-  return `https://maps.google.com/?q=${latitude},${longitude}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=driving`;
 }
 
 function splitLocationText(locationText) {
@@ -3800,6 +3834,11 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
   });
 }
 let selectedManagedOrderId = "";
+let customerTrackingMap = null;
+let customerTrackingMarker = null;
+let customerTrackingTimer = null;
+let customerTrackingAbort = null;
+let customerTrackingOrderId = "";
 
 function orderShortId(order) {
   return String(order?.id || "")
@@ -4014,6 +4053,12 @@ function renderHistory(historyInput) {
   if (clearWhatsappButton) {
     clearWhatsappButton.hidden = whatsappOrders.length === 0;
   }
+
+  document.querySelectorAll("[data-track-delivery]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openCustomerTracking(button.getAttribute("data-track-delivery"));
+    });
+  });
 }
 function timelineHtml(order) {
   const flow = orderFlow(order);
@@ -4080,6 +4125,221 @@ function whatsappOrderCard(order) {
   `;
 }
 
+
+
+async function stopCustomerTracking() {
+  customerTrackingOrderId = "";
+
+  if (customerTrackingTimer) {
+    clearTimeout(customerTrackingTimer);
+    customerTrackingTimer = null;
+  }
+
+  if (customerTrackingAbort) {
+    customerTrackingAbort.abort();
+    customerTrackingAbort = null;
+  }
+
+  if (customerTrackingMap) {
+    customerTrackingMap.remove();
+    customerTrackingMap = null;
+  }
+
+  customerTrackingMarker = null;
+
+  document
+    .querySelectorAll("[data-live-order]")
+    .forEach((node) => {
+      const status = node.querySelector("[data-live-status]");
+
+      if (status) status.textContent = "";
+
+      const map = node.querySelector(".customer-live-tracking__map");
+
+      if (map) {
+        map.hidden = true;
+        map.innerHTML = "";
+      }
+
+      const button = node.querySelector("[data-track-delivery]");
+
+      if (button) button.hidden = false;
+    });
+}
+
+async function openCustomerTracking(orderId) {
+  if (!window.L || !customerSession?.idToken) return;
+
+  await stopCustomerTracking();
+
+  customerTrackingOrderId = orderId;
+
+  const holder = document.querySelector(
+    `[data-live-order="${window.CSS?.escape ? CSS.escape(orderId) : orderId}"]`
+  );
+
+  if (!holder) {
+    customerTrackingOrderId = "";
+
+    return;
+  }
+
+  const statusEl = holder.querySelector("[data-live-status]");
+  const button = holder.querySelector("[data-track-delivery]");
+  const mapEl = holder.querySelector(".customer-live-tracking__map");
+
+  if (!mapEl) return;
+
+  mapEl.hidden = false;
+
+  if (button) button.hidden = true;
+
+  if (!customerTrackingMap) {
+    customerTrackingMap = L.map(mapEl, {
+      zoomControl: true,
+      attributionControl: true
+    }).setView([19.4326, -99.1332], 13);
+  }
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap"
+  }).addTo(customerTrackingMap);
+
+  const markerIcon = L.divIcon({
+    className: "customer-live-marker",
+    html: '<span></span>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+
+  customerTrackingMarker = L.marker([19.4326, -99.1332], {
+    icon: markerIcon
+  }).addTo(customerTrackingMap);
+
+  let keepPolling = true;
+
+  async function poll() {
+    if (
+      document.hidden ||
+      customerTrackingOrderId !== orderId ||
+      !keepPolling
+    ) {
+      return;
+    }
+
+    customerTrackingAbort = new AbortController();
+
+    try {
+      const query = new URLSearchParams({
+        project_id: String(ITM_PROJECT_ID),
+        order_id: orderId
+      });
+      const response = await fetch(
+        `${ITM_DELIVERY_LOCATION_URL}?${query.toString()}`,
+        {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${customerSession.idToken}`
+          },
+          cache: "no-store",
+          signal: customerTrackingAbort.signal
+        }
+      );
+
+      const body = await response.json().catch(() => ({}));
+
+      if (response.status === 401 || response.status === 409) {
+        keepPolling = false;
+
+        if (statusEl) {
+          statusEl.textContent =
+            "El seguimiento terminó porque el pedido ya no está en camino.";
+        }
+
+        return;
+      }
+
+      if (!response.ok) throw new Error("HTTP");
+
+      if (!body.ok) throw new Error(body.code || "TRACKING");
+
+      if (customerTrackingOrderId !== orderId) return;
+
+      if (!body.available || !body.location) {
+        if (statusEl) {
+          statusEl.textContent = body.stale
+            ? "Ubicación no disponible. Tu repartidor aún no la ha compartido."
+            : "Esperando la ubicación de tu repartidor…";
+        }
+
+        return;
+      }
+
+      const { latitude, longitude, updated_at: updatedAt } = body.location;
+      const position = [Number(latitude), Number(longitude)];
+
+      if (statusEl) {
+        statusEl.textContent = `Actualizado ${new Date(
+          updatedAt || Date.now()
+        ).toLocaleTimeString("es-MX")}`;
+      }
+
+      if (customerTrackingMarker) {
+        customerTrackingMarker.setLatLng(position);
+      }
+
+      customerTrackingMap.setView(position, customerTrackingMap.getZoom());
+      setTimeout(() => customerTrackingMap?.invalidateSize(), 60);
+    } catch (error) {
+      if (error.name === "AbortError") return;
+
+      if (statusEl) {
+        statusEl.textContent = "No se pudo actualizar la ubicación.";
+      }
+    } finally {
+      customerTrackingAbort = null;
+    }
+  }
+
+  async function scheduleNext() {
+    if (
+      !keepPolling ||
+      document.hidden ||
+      customerTrackingOrderId !== orderId
+    ) {
+      return;
+    }
+
+    customerTrackingTimer = setTimeout(async () => {
+      await poll();
+      await scheduleNext();
+    }, 20_000);
+  }
+
+  await poll();
+  await scheduleNext();
+}
+
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden) {
+    if (customerTrackingTimer) {
+      clearTimeout(customerTrackingTimer);
+      customerTrackingTimer = null;
+    }
+
+    if (customerTrackingAbort) {
+      customerTrackingAbort.abort();
+      customerTrackingAbort = null;
+    }
+
+    return;
+  }
+
+  if (customerTrackingOrderId) {
+    void openCustomerTracking(customerTrackingOrderId);
+  }
+});
 function currentOrderCard(order) {
   if (isWhatsappOrder(order)) return whatsappOrderCard(order);
 
@@ -4090,6 +4350,12 @@ function currentOrderCard(order) {
     0
   );
   const status = statusInfo(order);
+  const canTrack =
+    order.serverStatus === "shipping" &&
+    !isPickupOrder(order) &&
+    isActiveOrder(order) &&
+    Number.isFinite(Number(order.deliveryLatitude)) &&
+    Number.isFinite(Number(order.deliveryLongitude));
 
   return `
     <article class="current-order-card">
@@ -4113,6 +4379,21 @@ function currentOrderCard(order) {
         ${timelineHtml(order)}
       </details>
 
+      ${canTrack ? `
+        <div class="customer-live-tracking" data-live-order="${escapeHtml(order.id)}">
+          <div class="customer-live-tracking__head">
+            <div>
+              <strong>Ubicación de tu repartidor</strong>
+              <small data-live-status>Cargando…</small>
+            </div>
+            <button type="button" data-track-delivery="${escapeHtml(order.id)}">
+              Ver en el mapa
+            </button>
+          </div>
+          <div class="customer-live-tracking__map" hidden></div>
+        </div>
+      ` : ""}
+
       ${!isPickupOrder(order) && order.deliveryCode && isActiveOrder(order) ? `
         <div class="client-code">
           <span>Codigo de entrega</span>
@@ -4123,7 +4404,6 @@ function currentOrderCard(order) {
     </article>
   `;
 }
-
 /**
  * Pedidos que viven en Neon. Solo se muestran si el cliente tiene sesion: el
  * endpoint exige el token de Firebase y nunca devuelve pedidos de otra cuenta.
@@ -4182,6 +4462,14 @@ function serverOrderToLocal(order) {
     locationText: locationLines.join("\n"),
     shippingType: order.fulfillment_type === "pickup" ? "Pasar a buscar" : "Entrega a domicilio",
     status: SERVER_STATUS_MAP[order.status] || "nuevo",
+    serverStatus: order.status || "nuevo",
+    fulfillmentType: order.fulfillment_type || "delivery",
+    deliveryLatitude: order.delivery_latitude === null
+      ? null
+      : Number(order.delivery_latitude),
+    deliveryLongitude: order.delivery_longitude === null
+      ? null
+      : Number(order.delivery_longitude),
     paymentMethod: order.payment_method,
     paymentStatus:
       order.payment_status === "paid" ? "Pago confirmado con codigo" : "Pago por confirmar",
