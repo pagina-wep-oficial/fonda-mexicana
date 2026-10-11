@@ -33,11 +33,9 @@
     <section class="panel customer-account" id="customer-account">
       <h2>Datos para tus pedidos</h2>
 
-      <p class="muted" id="customer-account-status">
-        Abre el icono de perfil para iniciar sesión y editar tus datos.
-      </p>
+      <p class="muted" id="customer-account-status" hidden aria-live="polite"></p>
 
-      <form id="customer-profile-form">
+      <form id="customer-profile-form" hidden>
         <label>
           <span>Nombre</span>
           <input id="customerName" type="text" required>
@@ -58,9 +56,12 @@
           <textarea id="customerReference" rows="2"></textarea>
         </label>
 
-        <button class="button primary" id="save-customer-profile-btn" type="submit" hidden>
-          Guardar mis datos
-        </button>
+        <div class="customer-profile-actions">
+          <button class="button primary" id="save-customer-profile-btn" type="submit" hidden disabled>
+            Guardar cambios
+          </button>
+          <a class="button secondary" href="tienda.html">Ver catálogo</a>
+        </div>
       </form>
     </section>
   </main>

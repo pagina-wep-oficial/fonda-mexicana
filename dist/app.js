@@ -24,10 +24,16 @@ const ITM_ORDERS_URL =
   `https://itm-void-excepcional.pages.dev/api/store-orders?project_id=${encodeURIComponent(ITM_PROJECT_ID)}&public=1`;
 const ITM_PROFILE_URL =
   `https://itm-void-excepcional.pages.dev/api/store-customer-profile?project_id=${encodeURIComponent(ITM_PROJECT_ID)}`;
+const ITM_COMMENTS_URL =
+  `https://itm-void-excepcional.pages.dev/api/comments?project_id=${encodeURIComponent(ITM_PROJECT_ID)}&store_profile=1`;
 const ITM_MY_ORDERS_URL = `${ITM_ORDERS_URL}&mine=1`;
-const ITM_DELIVERY_LOCATION_URL = `${ITM_BASE_URL}/api/store-delivery-location`;
+const ITM_DELIVERY_LOCATION_URL =
+  "https://itm-void-excepcional.pages.dev/api/store-delivery-location";
 const STORE_CONFIG_URL = "/store-config.json";
 const CATALOG_VIEW_KEY = `itm.catalog.view:${ITM_PROJECT_ID}`;
+const CATALOG_CACHE_KEY = `itm.catalog.cache:${ITM_PROJECT_ID}`;
+const CATALOG_CACHE_MAX_AGE_MS = 90 * 1000;
+const OPINIONS_INTENT_KEY = `itm.opinions.intent:${ITM_PROJECT_ID}`;
 
 function applyStorePaymentSettings(settings = {}) {
   storeMode =
@@ -87,8 +93,14 @@ function applyStorePickupSettings(pickup = {}) {
 
 let customerSession = null;
 let customerProfile = null;
+let customerProfileBaseline = "";
 let profileIdentityLoading = false;
 let profileIdentityRequest = null;
+let profileIdentityLoaded = false;
+let profileActionIntent = "";
+let opinionsComments = [];
+let opinionsExpanded = false;
+let selectedOpinionScore = 0;
 
 async function loadStaticStoreConfig() {
   try {
@@ -669,13 +681,18 @@ const catalogState = {
   hasMore: true,
   loading: false,
   query: "",
-  configLoaded: false
+  configLoaded: false,
+  settings: null
 };
 
 const cartQuoteState = {
   items: new Map(),
   revision: "",
   inFlight: null
+};
+
+const cartViewState = {
+  resolving: false
 };
 
 let catalogSearchTimer = null;
@@ -859,6 +876,18 @@ function saveCatalogViewState() {
     anchor_top: anchor?.top || 0,
     saved_at: Date.now()
   });
+
+  writeSessionJson(CATALOG_CACHE_KEY, {
+    version: 1,
+    saved_at: Date.now(),
+    category: activeCategory,
+    query: catalogState.query,
+    items: catalogState.items,
+    categories: catalogState.categories,
+    next_offset: catalogState.nextOffset,
+    has_more: catalogState.hasMore,
+    settings: catalogState.settings || {}
+  });
 }
 
 function getCatalogViewState() {
@@ -882,6 +911,53 @@ function getCatalogViewState() {
     anchor_product_id: String(saved.anchor_product_id || ""),
     anchor_top: Number(saved.anchor_top) || 0
   };
+}
+
+function getCatalogCache(saved) {
+  const cached = readSessionJson(CATALOG_CACHE_KEY, null);
+
+  if (
+    !cached ||
+    cached.version !== 1 ||
+    Date.now() - Number(cached.saved_at || 0) > CATALOG_CACHE_MAX_AGE_MS ||
+    String(cached.category || "Todos") !== String(saved?.category || "Todos") ||
+    String(cached.query || "") !== String(saved?.query || "") ||
+    !Array.isArray(cached.items) ||
+    !cached.items.length
+  ) {
+    return null;
+  }
+
+  return {
+    items: cached.items.map(mapPublicCatalogProduct),
+    categories: Array.isArray(cached.categories)
+      ? cached.categories.map(String).filter(Boolean)
+      : ["Todos"],
+    nextOffset: Number.isInteger(cached.next_offset)
+      ? cached.next_offset
+      : null,
+    hasMore: cached.has_more === true,
+    settings:
+      cached.settings && typeof cached.settings === "object"
+        ? cached.settings
+        : {}
+  };
+}
+
+function restoreCatalogCache(cached) {
+  applyStorePaymentSettings(cached.settings);
+  catalogState.items = cached.items;
+  catalogState.categories = cached.categories.includes("Todos")
+    ? cached.categories
+    : ["Todos", ...cached.categories];
+  catalogState.nextOffset = cached.nextOffset;
+  catalogState.hasMore = cached.hasMore;
+  catalogState.settings = cached.settings;
+  products = catalogState.items;
+
+  document.body.classList.add("catalog-view-restoring");
+  renderFilters();
+  renderCatalog();
 }
 
 function clearCatalogViewState() {
@@ -935,6 +1011,34 @@ async function restoreCatalogViewState(onInitialCatalogReady = null) {
     if (searchInput) {
       searchInput.value = saved.query;
     }
+  }
+
+  const cached = getCatalogCache(saved);
+
+  if (cached) {
+    restoreCatalogCache(cached);
+
+    const staticConfig = loadStaticStoreConfig().finally(() => {
+      catalogState.configLoaded = true;
+    });
+
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(resolve);
+      });
+    });
+
+    restoreCatalogScroll(saved);
+    document.body.classList.remove("catalog-view-restoring");
+    clearCatalogViewState();
+
+    await staticConfig;
+
+    if (typeof onInitialCatalogReady === "function") {
+      onInitialCatalogReady();
+    }
+
+    return;
   }
 
   await loadCatalogProducts();
@@ -1333,6 +1437,13 @@ function productPaymentMethods(product) {
     : [defaultPaymentMethod];
 }
 
+function usesInventoryControl(product) {
+  return (
+    storeMode === "managed_orders" &&
+    product?.inventory_enabled === true
+  );
+}
+
 function productPrimaryPaymentMethod(product) {
   const methods = productPaymentMethods(product);
 
@@ -1574,6 +1685,49 @@ function profileName(){
   ).trim();
 }
 
+function customerProfileIsConfigured() {
+  return Boolean(String(customerProfile?.display_name || "").trim());
+}
+
+async function createInitialCustomerProfile() {
+  const displayName = String(
+    customerSession?.user?.displayName || ""
+  ).trim();
+
+  if (!customerSession?.idToken || !displayName) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(ITM_PROFILE_URL, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      },
+      body: JSON.stringify({
+        display_name: displayName,
+        phone: "",
+        address: "",
+        reference: ""
+      })
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result?.ok !== true) {
+      throw new Error(result?.code || "PROFILE_INITIAL_SAVE_FAILED");
+    }
+
+    customerProfile = result.profile || null;
+    return true;
+  } catch (error) {
+    console.warn("No se pudo crear el perfil inicial.", error);
+    return false;
+  }
+}
+
 function renderProfileMenu(){
   const button=document.querySelector("[data-profile-corner]");
   const overlay=document.querySelector("[data-profile-overlay]");
@@ -1597,18 +1751,6 @@ const loggedIn=Boolean(
   const ordersLink=overlay.querySelector("[data-profile-orders]");
   const logoutButton=overlay.querySelector("[data-profile-logout]");
 
-if(profileIdentityLoading){
-  if(menuName)menuName.textContent="Cargando perfil...";
-  if(menuEmail)menuEmail.textContent="";
-  if(message)message.textContent="Cargando tus datos...";
-  if(status)status.textContent="Espera un momento";
-  if(loginButton)loginButton.hidden=true;
-  if(profileLink)profileLink.hidden=true;
-  if(ordersLink)ordersLink.hidden=true;
-  if(logoutButton)logoutButton.hidden=true;
-  return;
-}
-
   const name=profileName();
   const initials=profileInitials(name);
   const avatarMarkup=profileAvatarMarkup(initials, loggedIn);
@@ -1631,7 +1773,11 @@ if(profileIdentityLoading){
   if(message){
     message.textContent=loggedIn
       ? "Administra tus datos y consulta tus pedidos."
-      : "Inicia sesión para guardar tus datos y facilitar tus pedidos.";
+      : profileActionIntent === "comment"
+        ? "Inicia sesión para comentar y facilitar tus pedidos."
+        : profileActionIntent === "rating"
+          ? "Inicia sesión para calificar y facilitar tus pedidos."
+          : "Inicia sesión para guardar tus datos y facilitar tus pedidos.";
   }
 
   if(loginButton)loginButton.hidden=loggedIn;
@@ -1640,8 +1786,13 @@ if(profileIdentityLoading){
   if(logoutButton)logoutButton.hidden=!loggedIn;
 }
 
-async function loadProfileIdentity(){
-  if (profileIdentityRequest) return profileIdentityRequest;
+async function loadProfileIdentity({ force = false } = {}){
+  if (profileIdentityRequest) {
+    await profileIdentityRequest;
+    if (!force) return;
+  }
+
+  if (profileIdentityLoaded && !force) return;
 
   profileIdentityRequest = (async () => {
     profileIdentityLoading = true;
@@ -1678,6 +1829,7 @@ async function loadProfileIdentity(){
       console.warn("No se pudo restaurar la sesión del cliente.", error);
     } finally {
       profileIdentityLoading = false;
+      profileIdentityLoaded = true;
       renderProfileMenu();
     }
   })();
@@ -1738,10 +1890,10 @@ function initProfileMenu(){
   const close=()=>{overlay.hidden=true};
 
 button.addEventListener("click",async()=>{
-  profileIdentityLoading=true;
+  profileActionIntent="";
+  await loadProfileIdentity();
   overlay.hidden=false;
   renderProfileMenu();
-  await loadProfileIdentity();
 });
 
   overlay.querySelector("[data-profile-close]")?.addEventListener("click",close);
@@ -1761,8 +1913,25 @@ button.addEventListener("click",async()=>{
     try{
       if(status)status.textContent="Abriendo inicio de sesión...";
       await auth.signInWithGoogle();
-      await loadProfileIdentity();
-      if(status)status.textContent="Sesión iniciada.";
+      await loadProfileIdentity({ force: true });
+
+      const firstProfile = !customerProfileIsConfigured();
+
+      if (firstProfile) {
+        const returnTo = profileActionIntent
+          ? "&return=index.html%23opiniones"
+          : "";
+        if (!profileActionIntent) {
+          await createInitialCustomerProfile();
+        }
+        window.location.assign(`perfil-de-usuario.html?setup=1${returnTo}`);
+        return;
+      }
+
+      close();
+      window.dispatchEvent(new CustomEvent("itm:customer-ready", {
+        detail: { intent: profileActionIntent }
+      }));
     }catch(error){
       if(status)status.textContent="No se pudo iniciar sesión.";
     }
@@ -1857,7 +2026,7 @@ function addToCart(id, quantity = 1) {
   const currentQuantity = Math.max(0, Number(cart[id]) || 0);
   let nextQuantity = Math.max(1, Number(quantity) || 1);
 
-  if (product.inventory_enabled) {
+  if (usesInventoryControl(product)) {
     const available = Math.max(0, Number(product.available_quantity) || 0);
 
     if (available <= 0) {
@@ -1884,7 +2053,7 @@ function setItemQuantity(id, quantity) {
   const product = getProduct(id);
   let nextQuantity = Math.max(0, Number(quantity) || 0);
 
-  if (product?.inventory_enabled) {
+  if (usesInventoryControl(product)) {
     const available = Math.max(
       0,
       Number(product.available_quantity) || 0
@@ -1995,10 +2164,10 @@ function productPaymentLabel(product) {
 
 function productCard(product) {
   const outOfStock =
-    product.inventory_enabled &&
+    usesInventoryControl(product) &&
     product.available_quantity <= 0;
 
-  const stockLabel = product.inventory_enabled
+  const stockLabel = usesInventoryControl(product)
     ? outOfStock
       ? "Agotado"
       : `Disponibles: ${product.available_quantity}`
@@ -2345,6 +2514,7 @@ async function loadCatalogProducts({ reset = true, productId = null } = {}) {
     }
 
     applyStorePaymentSettings(body.settings || {});
+    catalogState.settings = body.settings || {};
 
     const mappedProducts = body.products.map(
       mapPublicCatalogProduct
@@ -2445,6 +2615,567 @@ async function initCatalog() {
   });
 }
 
+function homeFeaturedProductCard(product) {
+  const imageUrl = product.image_url || GENERIC_IMAGE;
+  const productName = escapeHtml(product.name);
+  const productCategory = escapeHtml(product.category || "Producto");
+  const productDescription = escapeHtml(product.description || "");
+  const productUrl = `detalle.html?id=${encodeURIComponent(product.id)}`;
+
+  return `
+    <article class="home-featured-card">
+      <a class="home-featured-image" href="${productUrl}">
+        <img
+          src="${escapeHtml(imageUrl)}"
+          alt="${productName}"
+          loading="lazy"
+        >
+      </a>
+
+      <div class="home-featured-body">
+        <p class="home-featured-category">${productCategory}</p>
+        <h3><a href="${productUrl}">${productName}</a></h3>
+
+        ${
+          productDescription
+            ? `<p class="home-featured-description">${productDescription}</p>`
+            : ""
+        }
+
+        <div class="home-featured-bottom">
+          <div>
+            ${renderProductPrice(product)}
+            ${
+              productUnitText(product)
+                ? `<small>${escapeHtml(productUnitText(product))}</small>`
+                : ""
+            }
+          </div>
+
+          <a class="button primary small" href="${productUrl}">
+            Ver producto
+          </a>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+async function initHome() {
+  const holder = document.getElementById("homeFeaturedProducts");
+
+  if (!holder) return;
+
+  try {
+    const endpoint = new URL(ITM_PRODUCTS_URL);
+
+    endpoint.searchParams.set("limit", "24");
+    endpoint.searchParams.set("offset", "0");
+
+    const response = await fetch(endpoint, {
+      headers: {
+        Accept: "application/json"
+      },
+      cache: "no-store"
+    });
+
+    const body = await response.json().catch(() => ({}));
+
+    if (
+      !response.ok ||
+      body?.ok !== true ||
+      !Array.isArray(body.products)
+    ) {
+      throw new Error(
+        body?.code || `HOME_PRODUCTS_HTTP_${response.status}`
+      );
+    }
+
+    applyStorePaymentSettings(body.settings || {});
+
+    const catalogProducts = body.products.map(
+      mapPublicCatalogProduct
+    );
+
+    products = catalogProducts;
+
+    const featuredProducts = catalogProducts
+      .filter((product) => product.featured === true)
+      .slice(0, 3);
+
+    if (!featuredProducts.length) {
+      holder.innerHTML = `
+        <div class="home-products-empty">
+          <strong>Pronto habrá productos destacados aquí.</strong>
+          <a class="button secondary" href="tienda.html">
+            Explorar productos
+          </a>
+        </div>
+      `;
+      return;
+    }
+
+    holder.innerHTML = featuredProducts
+      .map(homeFeaturedProductCard)
+      .join("");
+
+  } catch (error) {
+    console.warn(
+      "No se pudieron cargar los productos destacados:",
+      error
+    );
+
+    holder.innerHTML = `
+      <div class="home-products-empty">
+        <strong>No pudimos cargar los productos ahora.</strong>
+        <a class="button secondary" href="tienda.html">
+          Abrir tienda
+        </a>
+      </div>
+    `;
+  }
+}
+
+function opinionIntent() {
+  try {
+    const value = sessionStorage.getItem(OPINIONS_INTENT_KEY);
+    return value === "comment" || value === "rating" ? value : "";
+  } catch {
+    return "";
+  }
+}
+
+function setOpinionIntent(intent = "") {
+  profileActionIntent = intent === "comment" || intent === "rating" ? intent : "";
+  try {
+    if (profileActionIntent) sessionStorage.setItem(OPINIONS_INTENT_KEY, profileActionIntent);
+    else sessionStorage.removeItem(OPINIONS_INTENT_KEY);
+  } catch {
+    // El sitio sigue funcionando aunque el navegador no permita sessionStorage.
+  }
+}
+
+function opinionDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
+
+function renderOpinionsComments(comments = []) {
+  const list = document.querySelector("[data-opinions-list]");
+  const toggle = document.querySelector("[data-opinions-toggle]");
+  if (!list) return;
+
+  opinionsComments = Array.isArray(comments) ? comments : [];
+
+  if (!opinionsComments.length) {
+    list.innerHTML = `
+      <p class="fonda-comments-empty">
+        Aún no hay comentarios. Sé la primera persona en compartir su experiencia.
+      </p>
+    `;
+    if (toggle) toggle.hidden = true;
+    return;
+  }
+
+  const visibleComments = opinionsExpanded ? opinionsComments : opinionsComments.slice(0, 5);
+  list.innerHTML = visibleComments.map((comment, index) => {
+    const commentId = String(comment.id || "");
+    const isOwnComment = opinionBelongsToCurrentCustomer(comment);
+
+    return `
+    <article class="fonda-comment-card" style="--comment-index:${index}">
+      <header>
+        <strong>${escapeHtml(comment.author_name || "Cliente")}</strong>
+        <time>${escapeHtml(opinionDate(comment.created_at))}</time>
+      </header>
+      <p>${escapeHtml(comment.content || "")}</p>
+      ${isOwnComment ? `
+        <div class="fonda-comment-actions" aria-label="Opciones de tu comentario">
+          <button class="fonda-comment-action-link" type="button" data-opinion-edit="${escapeHtml(commentId)}">Editar</button>
+          <button class="fonda-comment-action-link is-danger" type="button" data-opinion-delete="${escapeHtml(commentId)}">Eliminar</button>
+        </div>
+      ` : ""}
+    </article>
+  `;
+  }).join("");
+
+  bindOpinionCommentActions(list);
+
+  if (toggle) {
+    const remaining = Math.max(0, opinionsComments.length - 5);
+    toggle.hidden = remaining === 0;
+    toggle.textContent = opinionsExpanded ? "Ver menos comentarios" : "Ver más comentarios";
+  }
+}
+
+function opinionBelongsToCurrentCustomer(comment) {
+  const customerUid = String(customerSession?.user?.uid || "");
+  return Boolean(
+    customerUid &&
+    String(comment?.firebase_uid || "") === customerUid
+  );
+}
+
+function closeOpinionCommentModal() {
+  document.querySelector("[data-opinion-comment-modal]")?.remove();
+}
+
+function showOpinionCommentModal(kind, commentId) {
+  const comment = opinionsComments.find((item) => String(item?.id || "") === String(commentId || ""));
+  if (!comment || !opinionBelongsToCurrentCustomer(comment)) return;
+
+  closeOpinionCommentModal();
+  const isDelete = kind === "delete";
+  const modal = document.createElement("div");
+  modal.className = "fonda-comment-modal";
+  modal.dataset.opinionCommentModal = "";
+  modal.tabIndex = -1;
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", "opinion-comment-modal-title");
+  modal.innerHTML = isDelete ? `
+    <section class="fonda-comment-modal-card">
+      <button class="fonda-comment-modal-close" type="button" data-opinion-modal-close aria-label="Cerrar">×</button>
+      <p class="fonda-modal-eyebrow">TU COMENTARIO</p>
+      <h2 id="opinion-comment-modal-title">¿Eliminar comentario?</h2>
+      <p>Dejará de aparecer para las personas que visiten la página. Esta acción no se puede deshacer.</p>
+      <div class="fonda-comment-modal-actions">
+        <button class="button secondary" type="button" data-opinion-modal-close>Conservar comentario</button>
+        <button class="button primary fonda-modal-danger" type="button" data-opinion-delete-confirm>Eliminar</button>
+      </div>
+      <p class="fonda-comment-modal-status" data-opinion-modal-status role="status"></p>
+    </section>
+  ` : `
+    <section class="fonda-comment-modal-card">
+      <button class="fonda-comment-modal-close" type="button" data-opinion-modal-close aria-label="Cerrar">×</button>
+      <p class="fonda-modal-eyebrow">TU COMENTARIO</p>
+      <h2 id="opinion-comment-modal-title">Editar comentario</h2>
+      <form data-opinion-modal-edit-form>
+        <label for="opinion-modal-edit-input">Tu comentario</label>
+        <textarea id="opinion-modal-edit-input" data-opinion-modal-edit-input maxlength="2000">${escapeHtml(comment.content || "")}</textarea>
+        <div class="fonda-comment-modal-actions">
+          <button class="button secondary" type="button" data-opinion-modal-close>Cancelar</button>
+          <button class="button primary" type="submit">Guardar cambios</button>
+        </div>
+        <p class="fonda-comment-modal-status" data-opinion-modal-status role="status"></p>
+      </form>
+    </section>
+  `;
+
+  document.body.append(modal);
+  modal.querySelectorAll("[data-opinion-modal-close]").forEach((button) => {
+    button.addEventListener("click", closeOpinionCommentModal);
+  });
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeOpinionCommentModal();
+  });
+  modal.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeOpinionCommentModal();
+  });
+
+  if (isDelete) {
+    modal.querySelector("[data-opinion-delete-confirm]")?.addEventListener("click", () => {
+      void deleteOpinionComment(comment.id, modal);
+    });
+    window.requestAnimationFrame(() => modal.querySelector("[data-opinion-delete-confirm]")?.focus());
+  } else {
+    modal.querySelector("[data-opinion-modal-edit-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const content = modal.querySelector("[data-opinion-modal-edit-input]")?.value.trim() || "";
+      void saveOpinionEdit(comment.id, content, modal);
+    });
+    window.requestAnimationFrame(() => modal.querySelector("[data-opinion-modal-edit-input]")?.focus());
+  }
+}
+
+async function saveOpinionEdit(commentId, content, modal) {
+  const status = document.querySelector("[data-opinions-status]");
+  const modalStatus = modal?.querySelector("[data-opinion-modal-status]");
+
+  if (!content) {
+    if (modalStatus) modalStatus.textContent = "Tu comentario no puede quedar vacío.";
+    return;
+  }
+
+  await loadProfileIdentity();
+  if (!customerSession?.idToken) {
+    if (status) status.textContent = "Inicia sesión para editar tu comentario.";
+    return;
+  }
+
+  try {
+    if (modalStatus) modalStatus.textContent = "Guardando cambios…";
+    const response = await fetch(ITM_COMMENTS_URL, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      },
+      body: JSON.stringify({
+        project_id: ITM_PROJECT_ID,
+        comment_id: commentId,
+        content
+      })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true) throw new Error(body?.code || "COMMENT_UPDATE_FAILED");
+
+    closeOpinionCommentModal();
+    if (status) status.textContent = "Tu comentario fue actualizado.";
+    await loadOpinions();
+  } catch (error) {
+    if (modalStatus) modalStatus.textContent = "No se pudo guardar tu comentario. Inténtalo de nuevo.";
+  }
+}
+
+async function deleteOpinionComment(commentId, modal) {
+  const status = document.querySelector("[data-opinions-status]");
+  const modalStatus = modal?.querySelector("[data-opinion-modal-status]");
+
+  await loadProfileIdentity();
+  if (!customerSession?.idToken) {
+    if (status) status.textContent = "Inicia sesión para eliminar tu comentario.";
+    return;
+  }
+
+  try {
+    if (modalStatus) modalStatus.textContent = "Eliminando comentario…";
+    const response = await fetch(ITM_COMMENTS_URL, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      },
+      body: JSON.stringify({
+        project_id: ITM_PROJECT_ID,
+        comment_id: String(commentId || "")
+      })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true) throw new Error(body?.code || "COMMENT_DELETE_FAILED");
+
+    closeOpinionCommentModal();
+    if (status) status.textContent = "Tu comentario fue eliminado.";
+    await loadOpinions();
+  } catch (error) {
+    if (modalStatus) modalStatus.textContent = "No se pudo eliminar tu comentario. Inténtalo de nuevo.";
+  }
+}
+
+function bindOpinionCommentActions(list) {
+  list.querySelectorAll("[data-opinion-edit]").forEach((button) => {
+    button.addEventListener("click", () => showOpinionCommentModal("edit", button.dataset.opinionEdit));
+  });
+
+  list.querySelectorAll("[data-opinion-delete]").forEach((button) => {
+    button.addEventListener("click", () => showOpinionCommentModal("delete", button.dataset.opinionDelete));
+  });
+}
+
+function updateOpinionStars(previewScore = 0) {
+  const activeScore = previewScore || selectedOpinionScore;
+  document.querySelectorAll("[data-opinions-score]").forEach((button) => {
+    const score = Number(button.dataset.opinionsScore);
+    button.classList.toggle("is-preview", Boolean(previewScore) && score <= previewScore);
+    button.classList.toggle("is-selected", !previewScore && score <= selectedOpinionScore);
+    button.setAttribute("aria-pressed", String(score === activeScore));
+  });
+}
+
+function renderOpinionsRating({ average = 0, count = 0 } = {}) {
+  const averageNode = document.querySelector("[data-opinions-average]");
+  const countNode = document.querySelector("[data-opinions-count]");
+  if (averageNode) averageNode.textContent = count ? Number(average).toFixed(1) : "—";
+  if (countNode) {
+    countNode.textContent = count
+      ? `${count} ${Number(count) === 1 ? "reseña" : "reseñas"}`
+      : "Aún no hay reseñas";
+  }
+}
+
+async function loadOpinions() {
+  const status = document.querySelector("[data-opinions-status]");
+  try {
+    const ratingUrl = new URL(ITM_COMMENTS_URL);
+    ratingUrl.searchParams.set("mode", "rating");
+    const [commentsResponse, ratingResponse] = await Promise.all([
+      fetch(ITM_COMMENTS_URL, { headers: { Accept: "application/json" }, cache: "no-store" }),
+      fetch(ratingUrl, { headers: { Accept: "application/json" }, cache: "no-store" })
+    ]);
+    const commentsBody = await commentsResponse.json().catch(() => ({}));
+    const ratingBody = await ratingResponse.json().catch(() => ({}));
+    if (!commentsResponse.ok || commentsBody?.ok !== true) throw new Error(commentsBody?.code || "COMMENTS_LOAD_FAILED");
+
+    renderOpinionsComments(Array.isArray(commentsBody.comments) ? commentsBody.comments : []);
+    renderOpinionsRating(ratingBody?.ok === true ? ratingBody : {});
+    if (status) status.textContent = "";
+  } catch (error) {
+    console.warn("No se pudieron cargar las opiniones.", error);
+    renderOpinionsComments([]);
+    if (status) status.textContent = "No pudimos cargar las opiniones ahora.";
+  }
+}
+
+function showOpinionForm(intent) {
+  const composer = document.querySelector("[data-opinions-composer]");
+  const rating = document.querySelector("[data-opinions-rating]");
+  const status = document.querySelector("[data-opinions-status]");
+  if (!composer || !rating) return;
+
+  composer.hidden = intent !== "comment";
+  rating.hidden = intent !== "rating";
+  if (intent === "rating") {
+    selectedOpinionScore = 0;
+    updateOpinionStars();
+  }
+  if (status) status.textContent = "";
+  if (intent === "comment") composer.querySelector("textarea")?.focus();
+}
+
+async function openOpinionAction(intent) {
+  setOpinionIntent(intent);
+  await loadProfileIdentity();
+
+  if (!customerSession?.idToken) {
+    const overlay = document.querySelector("[data-profile-overlay]");
+    if (overlay) {
+      overlay.hidden = false;
+      renderProfileMenu();
+    }
+    return;
+  }
+
+  if (!customerProfileIsConfigured()) {
+    window.location.assign("perfil-de-usuario.html?setup=1&return=index.html%23opiniones");
+    return;
+  }
+
+  showOpinionForm(intent);
+}
+
+async function submitOpinionComment(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const textarea = form.querySelector("textarea");
+  const status = document.querySelector("[data-opinions-status]");
+  const content = textarea?.value.trim() || "";
+  if (!content) {
+    if (status) status.textContent = "Escribe tu comentario antes de publicarlo.";
+    return;
+  }
+
+  await loadProfileIdentity();
+  if (!customerSession?.idToken || !customerProfileIsConfigured()) {
+    await openOpinionAction("comment");
+    return;
+  }
+
+  try {
+    if (status) status.textContent = "Publicando comentario…";
+    const response = await fetch(ITM_COMMENTS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      },
+      body: JSON.stringify({ project_id: ITM_PROJECT_ID, content })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true) throw new Error(body?.code || "COMMENT_SAVE_FAILED");
+    textarea.value = "";
+    form.hidden = true;
+    setOpinionIntent("");
+    if (status) status.textContent = "Tu comentario ya está publicado.";
+    await loadOpinions();
+  } catch (error) {
+    if (status) status.textContent = "No se pudo publicar tu comentario. Inténtalo de nuevo.";
+  }
+}
+
+async function submitOpinionRating(score) {
+  const status = document.querySelector("[data-opinions-status]");
+  selectedOpinionScore = score;
+  updateOpinionStars();
+  document.querySelector(".fonda-rating-options")?.classList.add("is-celebrating");
+  await loadProfileIdentity();
+  if (!customerSession?.idToken || !customerProfileIsConfigured()) {
+    document.querySelector(".fonda-rating-options")?.classList.remove("is-celebrating");
+    await openOpinionAction("rating");
+    return;
+  }
+
+  try {
+    if (status) status.textContent = "Guardando tu calificación…";
+    const response = await fetch(`${ITM_COMMENTS_URL}&mode=rating`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${customerSession.idToken}`
+      },
+      body: JSON.stringify({ project_id: ITM_PROJECT_ID, rating: score })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true) throw new Error(body?.code || "RATING_SAVE_FAILED");
+    document.querySelector("[data-opinions-rating]").hidden = true;
+    document.querySelector(".fonda-rating-options")?.classList.remove("is-celebrating");
+    setOpinionIntent("");
+    if (status) status.textContent = "Tu calificación ya está publicada.";
+    renderOpinionsRating(body);
+  } catch (error) {
+    document.querySelector(".fonda-rating-options")?.classList.remove("is-celebrating");
+    if (status) status.textContent = "No se pudo guardar tu calificación. Inténtalo de nuevo.";
+  }
+}
+
+function initOpinions() {
+  if (!document.querySelector("[data-opinions-list]")) return;
+
+  document.querySelector("[data-opinions-open-comment]")?.addEventListener("click", () => openOpinionAction("comment"));
+  document.querySelector("[data-opinions-open-rating]")?.addEventListener("click", () => openOpinionAction("rating"));
+  document.querySelector("[data-opinions-composer]")?.addEventListener("submit", submitOpinionComment);
+  document.querySelectorAll("[data-opinions-score]").forEach((button) => {
+    button.addEventListener("pointerenter", () => updateOpinionStars(Number(button.dataset.opinionsScore)));
+    button.addEventListener("focus", () => updateOpinionStars(Number(button.dataset.opinionsScore)));
+    button.addEventListener("click", () => submitOpinionRating(Number(button.dataset.opinionsScore)));
+  });
+  document.querySelector(".fonda-rating-options")?.addEventListener("pointerleave", () => updateOpinionStars());
+  document.querySelector(".fonda-rating-options")?.addEventListener("focusout", (event) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) updateOpinionStars();
+  });
+  document.querySelector("[data-opinions-toggle]")?.addEventListener("click", () => {
+    opinionsExpanded = !opinionsExpanded;
+    renderOpinionsComments(opinionsComments);
+  });
+  document.querySelectorAll("[data-opinions-cancel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelector("[data-opinions-composer]").hidden = true;
+      document.querySelector("[data-opinions-rating]").hidden = true;
+      setOpinionIntent("");
+    });
+  });
+  window.addEventListener("itm:customer-ready", (event) => {
+    renderOpinionsComments(opinionsComments);
+    const intent = event.detail?.intent || opinionIntent();
+    if (intent) showOpinionForm(intent);
+  });
+
+  void loadOpinions();
+  void loadProfileIdentity().then(() => renderOpinionsComments(opinionsComments));
+  const pendingIntent = opinionIntent();
+  if (pendingIntent) {
+    void openOpinionAction(pendingIntent);
+  }
+}
+
 async function initDetail({ preferredQuantity = null } = {}) {
   const holder = document.getElementById("detailView");
   if (!holder) return;
@@ -2472,11 +3203,11 @@ async function initDetail({ preferredQuantity = null } = {}) {
   document.title = `${product.name} | Fonda Mexicana`;
 
   const detailOutOfStock =
-    product.inventory_enabled &&
+    usesInventoryControl(product) &&
     product.available_quantity <= 0;
 
   const detailMaxQuantity =
-    product.inventory_enabled
+    usesInventoryControl(product)
       ? Math.max(1, product.available_quantity)
       : "";
 
@@ -2520,7 +3251,7 @@ async function initDetail({ preferredQuantity = null } = {}) {
         ${detailPayment.label}
       </p>
 
-      ${product.inventory_enabled
+      ${usesInventoryControl(product)
         ? `<p class="product-stock">${
             product.available_quantity > 0
               ? `Disponibles: ${product.available_quantity}`
@@ -2575,7 +3306,7 @@ async function initDetail({ preferredQuantity = null } = {}) {
   holder.querySelector("[data-detail-plus]")?.addEventListener("click", () => {
     const current = normalizeQuantity();
 
-    if (product.inventory_enabled && current >= product.available_quantity) {
+    if (usesInventoryControl(product) && current >= product.available_quantity) {
       showToast(`Solo hay ${product.available_quantity} disponibles`);
       return;
     }
@@ -2646,11 +3377,48 @@ function renderCart() {
   const holder = document.getElementById("cartItems");
   const total = document.getElementById("cartTotal");
   if (!holder) return;
+
   const items = cartItems();
+  const hasItems = items.length > 0;
+  const checkoutForm = document.getElementById("checkoutForm");
+  const clearCartButton = document.getElementById("clearCartBtn");
+  const continueShoppingLink = document.getElementById(
+    "continueShoppingLink"
+  );
+  const layout = holder.closest(".cart-layout");
+
+  checkoutForm?.toggleAttribute("hidden", !hasItems);
+  clearCartButton?.toggleAttribute("hidden", !hasItems);
+  continueShoppingLink?.toggleAttribute("hidden", !hasItems);
+  layout?.classList.toggle("is-empty", !hasItems);
+  layout?.setAttribute("aria-busy", String(cartViewState.resolving));
+
+  if (cartViewState.resolving) {
+    if (total) total.textContent = "—";
+
+    holder.innerHTML = `
+      <div class="empty-state cart-loading-state" role="status" aria-live="polite">
+        <span class="cart-loading-spinner" aria-hidden="true"></span>
+        Preparando tu carrito…
+      </div>
+    `;
+    return;
+  }
+
+  // El formulario empieza oculto desde el propio HTML para evitar que aparezca
+  // antes de saber si el carrito tiene productos.
+  checkoutForm?.style.removeProperty("display");
+
   if (total) total.textContent = money(cartTotal(items));
 
-  if (!items.length) {
-    holder.innerHTML = `<div class="empty-state">Tu carrito esta vacio. Agrega productos desde la tienda.</div>`;
+  if (!hasItems) {
+    holder.innerHTML = `
+      <div class="empty-state">
+        <strong>Tu carrito está vacío</strong>
+        <span>Cuando agregues productos, aquí podrás revisar tu pedido y elegir cómo obtenerlo.</span>
+        <a class="button secondary" href="tienda.html">Explorar productos</a>
+      </div>
+    `;
     return;
   }
 
@@ -2757,9 +3525,7 @@ function buildWhatsAppMessage(orderId, customerName, locationText, shippingType,
     "",
     ...location,
     "",
-    "━━━━━━━━━━━━━━",
-    "",
-    "Pedido enviado desde la pagina web."
+    "━━━━━━━━━━━━━━"
   ];
   return lines.join("\n");
 }
@@ -3179,20 +3945,60 @@ function renderCustomerAuth() {
   const loginButton = document.getElementById("customer-login-btn");
   const logoutButton = document.getElementById("customer-logout-btn");
   const saveButton = document.getElementById("save-customer-profile-btn");
+  const profileForm = document.getElementById("customer-profile-form");
 
   const loggedIn = Boolean(customerSession?.user);
 
   if (loginButton) loginButton.hidden = loggedIn;
   if (logoutButton) logoutButton.hidden = !loggedIn;
-  if (saveButton) saveButton.hidden = !loggedIn;
+  if (profileForm) profileForm.hidden = !loggedIn;
+
+  if (!loggedIn && saveButton) {
+    saveButton.hidden = true;
+    saveButton.disabled = true;
+  }
 
   renderProfileMenu();
 
   if (!status) return;
 
-  status.textContent = loggedIn
-    ? `Sesión iniciada como ${customerSession.user.displayName || "cliente"}.`
-    : "Inicia sesión para guardar tus datos.";
+  if (!loggedIn) {
+    status.hidden = true;
+    return;
+  }
+
+  if (customerProfile) {
+    status.hidden = false;
+    status.textContent = "✓ Tus datos están guardados para tus próximos pedidos.";
+  } else {
+    status.hidden = true;
+  }
+
+  updateCustomerProfileSaveState();
+}
+
+function customerProfileFormSignature() {
+  return JSON.stringify({
+    display_name: document.getElementById("customerName")?.value.trim() || "",
+    phone: document.getElementById("customerPhone")?.value.trim() || "",
+    address: document.getElementById("manualLocation")?.value.trim() || "",
+    reference: document.getElementById("customerReference")?.value.trim() || ""
+  });
+}
+
+function updateCustomerProfileSaveState() {
+  const saveButton = document.getElementById("save-customer-profile-btn");
+
+  if (!saveButton) return;
+
+  const loggedIn = Boolean(customerSession?.user && customerSession?.idToken);
+  const changed = loggedIn && customerProfileFormSignature() !== customerProfileBaseline;
+
+  saveButton.textContent = customerProfile
+    ? "Guardar cambios"
+    : "Guardar mis datos";
+  saveButton.hidden = !changed;
+  saveButton.disabled = !changed;
 }
 
 async function loadCustomerProfile() {
@@ -3203,7 +4009,7 @@ async function loadCustomerProfile() {
     customerSession = await auth.getSession();
 
     if (!customerSession?.idToken) {
-      renderCustomerAuth();
+      window.location.replace("tienda.html");
       return;
     }
 
@@ -3236,6 +4042,9 @@ async function loadCustomerProfile() {
       nameInput.value = customerSession.user.displayName || "";
     }
 
+    customerProfileBaseline = customerProfile
+      ? customerProfileFormSignature()
+      : "";
     renderCustomerAuth();
   } catch (error) {
     if (status) {
@@ -3267,7 +4076,20 @@ async function logoutCustomer() {
 
     customerSession = null;
     customerProfile = null;
+    customerProfileBaseline = "";
+    profileIdentityLoaded = false;
+    document.getElementById("customer-profile-form")?.reset();
+
+    if (document.body.dataset.page === "perfil") {
+      window.location.replace("tienda.html");
+      return;
+    }
+
     renderCustomerAuth();
+    if (document.querySelector("[data-opinions-list]")) {
+      closeOpinionCommentModal();
+      renderOpinionsComments(opinionsComments);
+    }
   } catch (error) {
     console.warn("No se pudo cerrar sesión:", error);
   }
@@ -3317,9 +4139,12 @@ async function saveCustomerProfile() {
     }
 
     customerProfile = result.profile || null;
+    customerProfileBaseline = customerProfileFormSignature();
+    renderCustomerAuth();
 
-    if (status) {
-      status.textContent = "Datos guardados para próximos pedidos.";
+    const returnTo = new URLSearchParams(window.location.search).get("return");
+    if (returnTo && /^index\.html(?:#opiniones)?$/.test(returnTo)) {
+      window.location.assign(returnTo);
     }
   } catch (error) {
     if (status) {
@@ -3344,20 +4169,58 @@ async function initCustomerProfilePage() {
       saveCustomerProfile();
     });
 
+  document
+    .getElementById("customer-profile-form")
+    ?.addEventListener("input", updateCustomerProfileSaveState);
+
   await loadCustomerProfile();
 }
 
+async function applyCustomerProfileToCart() {
+  await loadProfileIdentity();
+
+  if (!customerSession?.idToken || !customerProfile) return;
+
+  const nameInput = document.getElementById("customerName");
+  const savedName = String(customerProfile.display_name || "").trim();
+
+  // Nunca reemplaza un nombre que el cliente ya escribió.
+  if (savedName && nameInput && !nameInput.value.trim()) {
+    nameInput.value = savedName;
+    saveCheckoutDraft();
+  }
+}
+
 async function initCart() {
-  await loadCatalogProducts();
-  await requestCartQuote({ quiet: true });
-  renderCart();
-  connectStoreLive();
+  cartViewState.resolving = true;
 
   document.getElementById("storeDirectionsLink").href =
     STORE_LOCATION.directionsUrl;
+
+  restoreCheckoutDraft();
   applyShippingMode();
   setLocationMethod(selectedLocationMethod);
-  restoreCheckoutDraft();
+  renderCart();
+
+  // Se carga en segundo plano: no bloquea ni modifica la ubicación elegida.
+  void applyCustomerProfileToCart();
+
+  const hasStoredItems = Object.keys(getCart()).length > 0;
+
+  if (hasStoredItems) {
+    try {
+      await loadCatalogProducts();
+      await requestCartQuote({ quiet: true });
+    } finally {
+      cartViewState.resolving = false;
+      renderCart();
+    }
+  } else {
+    cartViewState.resolving = false;
+    renderCart();
+  }
+
+  connectStoreLive();
 
   const syncVisibleCart = () => {
     if (document.visibilityState !== "visible") {
@@ -3505,8 +4368,7 @@ async function initCart() {
 const customerName =
       document.getElementById("customerName")?.value.trim() || "";
 
-    const checkoutPhone =
-      document.getElementById("customerPhone")?.value.trim() || "";
+    let checkoutPhone = String(customerProfile?.phone || "").trim();
 
     const shippingType =
       form.querySelector("input[name='shippingType']:checked")?.value ||
@@ -3598,6 +4460,11 @@ Como llegar: ${STORE_LOCATION.directionsUrl}`;
           );
           return;
         }
+
+        await loadProfileIdentity();
+        checkoutPhone = String(
+          customerProfile?.phone || checkoutPhone
+        ).trim();
       }
 
       const revisionBeforeCheckout = cartQuoteState.revision;
@@ -3952,15 +4819,18 @@ function renderHistory(historyInput) {
     ? historyInput
     : getHistory();
 
+  // Cambiar el modo solo afecta compras nuevas. Los pedidos ya pagados
+  // siguen visibles y pueden terminar su seguimiento sin interrupciones.
   const managedOrders = history.filter(
     (order) => !isWhatsappOrder(order)
   );
 
   const currentOrders = managedOrders.filter(isActiveOrder);
 
-  const completedOrders = managedOrders.filter(
-    (order) => !isActiveOrder(order)
-  );
+  const completedOrders =
+    storeMode === "managed_orders"
+      ? managedOrders.filter((order) => !isActiveOrder(order))
+      : [];
 
   const whatsappOrders = history.filter(isWhatsappOrder);
 
@@ -4545,15 +5415,47 @@ async function refreshHistoryView() {
   const serverOrders = await loadCustomerServerOrders();
 
   renderHistory(mergeOrderSources(localHistory, serverOrders));
-  renderCustomerOrderNotice(
-    serverOrders.length,
-    localHistory.filter(isWhatsappOrder).length
-  );
+  renderCustomerOrderNotice(serverOrders, localHistory);
 }
 
-function renderCustomerOrderNotice(serverCount, localCount) {
+function renderCustomerOrderNotice(serverOrdersInput, localHistoryInput) {
   const holder = document.getElementById("historyNotice");
   if (!holder) return;
+
+  const serverOrders = Array.isArray(serverOrdersInput)
+    ? serverOrdersInput
+    : [];
+  const localHistory = Array.isArray(localHistoryInput)
+    ? localHistoryInput
+    : [];
+  const localCount = localHistory.filter(isWhatsappOrder).length;
+  const activeManagedCount = serverOrders.filter(isActiveOrder).length;
+
+  if (storeMode === "whatsapp_catalog") {
+    const messages = [];
+
+    if (activeManagedCount) {
+      messages.push(
+        `${activeManagedCount} pedido${activeManagedCount === 1 ? "" : "s"} en proceso. Consulta su seguimiento aquí.`
+      );
+    }
+
+    if (localCount) {
+      messages.push(
+        `${localCount} pedido${localCount === 1 ? "" : "s"} enviado${localCount === 1 ? "" : "s"} por WhatsApp desde este dispositivo.`
+      );
+    }
+
+    holder.innerHTML = `
+      <p class="muted">
+        ${messages.length
+          ? messages.join(" · ")
+          : "Aquí aparecerán los pedidos que envíes por WhatsApp desde este dispositivo."
+        }
+      </p>
+    `;
+    return;
+  }
 
   if (!customerSession?.idToken) {
     holder.innerHTML = `
@@ -4564,7 +5466,7 @@ function renderCustomerOrderNotice(serverCount, localCount) {
     return;
   }
 
-  if (!serverCount && !localCount) {
+  if (!serverOrders.length && !localCount) {
     holder.innerHTML = `
       <p class="muted">
         Aún no tienes pedidos registrados.
@@ -4575,8 +5477,8 @@ function renderCustomerOrderNotice(serverCount, localCount) {
 
   holder.innerHTML = `
     <p class="muted">
-      ${serverCount
-        ? `${serverCount} pedido${serverCount === 1 ? "" : "s"} de tu cuenta`
+      ${serverOrders.length
+        ? `${serverOrders.length} pedido${serverOrders.length === 1 ? "" : "s"} de tu cuenta`
         : "Sin pedidos de tu cuenta"
       }${localCount
         ? ` · ${localCount} pedido${localCount === 1 ? "" : "s"} enviado${localCount === 1 ? "" : "s"} por WhatsApp`
@@ -4589,14 +5491,10 @@ function renderCustomerOrderNotice(serverCount, localCount) {
 function initHistory() {
   renderHistory();
 
-  renderCustomerOrderNotice(
-    0,
-    getHistory().filter(isWhatsappOrder).length
-  );
+  renderCustomerOrderNotice([], getHistory());
 
-  // El token de Firebase se restaura de forma asincrona; los pedidos de Neon
-  // solo se piden cuando ya hay sesion.
   void (async () => {
+    await refreshStoreSettingsFromServer();
     await loadProfileIdentity();
     await refreshHistoryView();
   })();
@@ -4892,6 +5790,8 @@ function renderLocalPanel() {
 const page = document.body.dataset.page;
 initAppNavigation();
 updateCartCount();
+if (page === "inicio") initHome();
+if (page === "inicio") initOpinions();
 if (page === "tienda") initCatalog();
 if (page === "detalle") initDetail();
 if (page === "carrito") initCart();

@@ -1,24 +1,24 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,850&family=Nunito+Sans:wght@400;700;800;900&display=swap");
 
 :root {
-  --ink: #2a1718;
-  --muted: #7e6464;
-  --paper: #fff3eb;
-  --surface: #ffffff;
-  --line: #ecd0c7;
-  --green: #8a9a54;
-  --green-dark: #6f7e42;
-  --gold: #d79a3a;
-  --red: #a62138;
-  --blue: #2b5f77;
-  --pink: #c9476f;
-  --clay: #bd3c4f;
-  --cream: #fff1dc;
-  --talavera: #2f6c89;
+  --ink: #241b16;
+  --muted: #6e6256;
+  --paper: #fbf3e5;
+  --surface: #fffdf8;
+  --line: #e5cba5;
+  --green: #2f6b4f;
+  --green-dark: #1e4d3b;
+  --gold: #dba63a;
+  --red: #9d2b32;
+  --blue: #1e5f78;
+  --pink: #cf6a30;
+  --clay: #b8492f;
+  --cream: #f8e6c2;
+  --talavera: #1f6681;
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Nunito Sans", Arial, Helvetica, sans-serif;
-  --shadow: 0 16px 38px rgba(36, 28, 25, 0.12);
-  --soft-shadow: 0 10px 24px rgba(36, 28, 25, 0.07);
+  --shadow: 0 16px 38px rgba(54, 39, 23, 0.14);
+  --soft-shadow: 0 10px 24px rgba(54, 39, 23, 0.08);
 }
 
 * {
@@ -30,9 +30,9 @@ body {
   padding-bottom: 96px;
   color: var(--ink);
   background:
-    radial-gradient(circle at 8% 0%, rgba(201, 71, 111, 0.14), transparent 28rem),
-    radial-gradient(circle at 92% 14%, rgba(215, 154, 58, 0.2), transparent 24rem),
-    linear-gradient(180deg, #fff3eb, #fde5d8);
+    radial-gradient(circle at 8% 0%, rgba(207, 106, 48, 0.14), transparent 28rem),
+    radial-gradient(circle at 92% 14%, rgba(219, 166, 58, 0.2), transparent 24rem),
+    linear-gradient(180deg, #fbf3e5, #f5e5c8);
   font-family: var(--font-body);
   line-height: 1.45;
 }
@@ -42,10 +42,21 @@ a {
   text-decoration: none;
 }
 
+a,
+button,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
 button,
 input,
 textarea {
   font: inherit;
+}
+
+:where(.button, .chip, .nav a, .cart-link, .profile-corner, .app-nav a, .quantity button, .remove-icon):active {
+  filter: brightness(0.93);
+  transform: scale(0.98);
 }
 
 .topbar {
@@ -391,6 +402,7 @@ textarea {
 
 .app-nav a {
   position: relative;
+  overflow: hidden;
   display: grid;
   place-items: center;
   gap: 3px;
@@ -401,6 +413,23 @@ textarea {
   font-size: 12px;
   font-weight: 900;
   text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms ease, background 140ms ease, filter 140ms ease;
+}
+
+.app-nav a:active {
+  background: rgba(0, 104, 71, 0.14);
+  transform: scale(0.96);
+}
+
+.app-nav a.active:active {
+  background: linear-gradient(135deg, var(--red), var(--pink));
+  filter: brightness(0.9);
+}
+
+.app-nav a:focus-visible {
+  outline: 3px solid rgba(0, 104, 71, 0.42);
+  outline-offset: 2px;
 }
 
 .app-nav a.active {
@@ -779,6 +808,12 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
   gap: 16px;
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+
+.catalog-view-restoring .product-grid {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 .product-card,
@@ -928,6 +963,22 @@ textarea:focus {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
   gap: 18px;
   align-items: start;
+}
+
+.cart-layout.is-empty {
+  display: block;
+}
+
+.cart-layout.is-empty > div:first-child {
+  width: 100%;
+  max-width: 680px;
+  margin-inline: auto;
+}
+
+.checkout-panel[hidden],
+#clearCartBtn[hidden],
+#continueShoppingLink[hidden] {
+  display: none !important;
 }
 
 .cart-list {
@@ -1898,12 +1949,39 @@ textarea:focus {
 }
 
 .empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
   padding: 28px;
   color: var(--muted);
   text-align: center;
   background: #fffdf8;
   border: 1px dashed #d8cdbd;
   border-radius: 16px;
+}
+
+.empty-state strong {
+  color: var(--green-dark);
+  font-size: 18px;
+}
+
+.cart-loading-state {
+  min-height: 148px;
+}
+
+.cart-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(31, 111, 85, 0.18);
+  border-top-color: var(--green-dark);
+  border-radius: 50%;
+  animation: cart-loading-spin 0.75s linear infinite;
+}
+
+@keyframes cart-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .toast {
@@ -3119,6 +3197,22 @@ textarea:focus {
   text-align:center;
 }
 
+.customer-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.customer-profile-actions .button {
+  flex: 1 1 180px;
+  justify-content: center;
+}
+
+#save-customer-profile-btn[hidden] {
+  display: none !important;
+}
+
 .profile-status{
   min-height:20px;
   margin:12px 0 0;
@@ -3422,6 +3516,17 @@ textarea:focus {
   grid-template-columns: minmax(250px, 0.78fr) minmax(0, 1.55fr);
   gap: 16px;
   align-items: start;
+}
+
+/* El atributo hidden debe ganar frente al layout de Mis pedidos. */
+.orders-page #ordersWorkspace[hidden],
+.orders-page #currentOrderDetail[hidden],
+.orders-page #completedOrdersHeading[hidden],
+.orders-page #completedOrders[hidden],
+.orders-page #whatsappOrdersHeading[hidden],
+.orders-page #whatsappOrders[hidden],
+.orders-page #clearWhatsappHistoryBtn[hidden] {
+  display: none !important;
 }
 
 .orders-page .orders-queue,

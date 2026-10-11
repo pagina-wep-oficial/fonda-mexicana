@@ -3,103 +3,306 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fonda Mexicana</title>
-    <meta name="description" content="Fonda Mexicana en Merida: comida casera, pedidos a domicilio y pedidos para pasar a buscar.">
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231b6b5f'/%3E%3Cpath d='M18 23h28l-3 22H21L18 23Z' fill='%23fff7e8'/%3E%3Cpath d='M24 23a8 8 0 0 1 16 0' fill='none' stroke='%23f4b942' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <title>Fonda Mexicana | Comida mexicana en Mérida</title>
+    <meta
+      name="description"
+      content="Fonda Mexicana en Mérida. Comida mexicana hecha al momento, pedidos para recoger o a domicilio."
+    >
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23772b24'/%3E%3Cpath d='M18 23h28l-3 22H21L18 23Z' fill='%23fff8ea'/%3E%3Cpath d='M24 23a8 8 0 0 1 16 0' fill='none' stroke='%23d4a34f' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"
+    >
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Nunito+Sans:wght@400;600;700;800;900&display=swap"
+      rel="stylesheet"
+    >
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="home.css">
   </head>
-  <body data-page="inicio">
-    <header class="topbar">
-      <a class="brand" href="index.html" aria-label="Inicio">
-        <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="" aria-hidden="true">
-        <span>Fonda Mexicana</span>
-      </a>
-      <nav class="nav" aria-label="Principal">
-        <a href="tienda.html">Hacer pedido</a>
-        <a class="cart-link" href="carrito.html">Carrito <span data-cart-count>0</span></a>
-        <a href="mis-pedidos.html">Mis pedidos</a>
+
+  <body data-page="inicio" class="home fonda-home">
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
+
+    <header class="fonda-hero" id="inicio">
+      <picture class="fonda-hero-media" aria-hidden="true">
+        <source media="(max-width: 700px)" srcset="assets/home-hero-cocina-640.jpg">
+        <source media="(max-width: 1100px)" srcset="assets/home-hero-cocina-900.jpg">
+        <img
+          src="assets/home-hero-cocina-1600.jpg"
+          alt=""
+          width="1600"
+          height="1067"
+          fetchpriority="high"
+        >
+      </picture>
+
+      <div class="fonda-hero-shade"></div>
+
+      <nav class="fonda-nav" aria-label="Principal">
+        <a class="fonda-brand" href="index.html" aria-label="Inicio Fonda Mexicana">
+          <img src="assets/fonda-mexicana-logo.png" alt="">
+          <span>Fonda Mexicana</span>
+        </a>
+
+        <div class="fonda-nav-links">
+          <a href="#nosotros">Nosotros</a>
+          <a href="#productos">Productos</a>
+          <a href="#ubicacion">Ubicación</a>
+          <a href="carrito.html">Carrito <span data-cart-count>0</span></a>
+        </div>
+
+        <a class="fonda-nav-order" href="tienda.html">Hacer pedido</a>
+        <button class="fonda-profile-trigger" data-profile-corner type="button" aria-label="Abrir perfil">
+          <span data-profile-avatar aria-hidden="true"></span>
+        </button>
       </nav>
+
+      <div class="fonda-hero-content">
+        <p class="fonda-kicker">Comida mexicana en Mérida, Yucatán</p>
+        <h1>Fonda Mexicana</h1>
+
+        <div class="fonda-divider" aria-hidden="true">
+          <span></span><b>◆</b><span></span>
+        </div>
+
+        <p class="fonda-subtitle">Comida hecha al momento · Para recoger o a domicilio</p>
+
+        <p class="fonda-quote">
+          Cocina de todos los días, preparada con sabor casero y servida como debe ser.
+        </p>
+
+        <div class="fonda-hero-actions">
+          <a class="fonda-button primary" href="tienda.html">Explorar productos</a>
+          <a class="fonda-button ghost" href="#ubicacion">Ver ubicación</a>
+        </div>
+      </div>
+
+      <a class="fonda-scroll" href="#nosotros">
+        <span>Conoce la fonda</span>
+        <b>↓</b>
+      </a>
     </header>
 
-    <main>
-      <section class="hero">
-        <div class="hero-bg" aria-hidden="true"></div>
-        <div class="hero-content">
-          <p class="eyebrow">Fonda Mexicana · Merida</p>
-          <h1>Sabor casero mexicano, sin complicarte.</h1>
-          <p class="hero-copy">Ven al local, pide a domicilio o encarga para pasar a buscar. Comida mexicana con sazón de casa y atención cercana.</p>
-          <div class="hero-proof" aria-label="Datos del local">
-            <span>★ 4.8</span>
-            <span>94 reseñas</span>
-            <span>$100-200 por persona</span>
-          </div>
-          <p class="hours-pill">Abre lunes a viernes de 8:00 am a 4:00 pm</p>
-          <div class="hero-actions">
-            <a class="button primary" href="tienda.html">Hacer pedido</a>
-            <a class="button ghost" href="#ubicacion">Como llegar</a>
-          </div>
-        </div>
-        <aside class="service-ribbon" aria-label="Opciones de servicio">
-          <article><strong>Comer aqui</strong><span>Ambiente limpio y agradable</span></article>
-          <article><strong>A domicilio</strong><span>Pedido directo por WhatsApp</span></article>
-          <article><strong>Pasar a buscar</strong><span>Ordena y recoge cuando este listo</span></article>
-        </aside>
-      </section>
+    <main id="contenido">
+      <section class="fonda-story" id="nosotros" aria-labelledby="story-title">
+        <div class="fonda-container fonda-story-grid">
+          <div class="fonda-story-copy">
+            <p class="fonda-section-tag">Nuestra esencia</p>
+            <h2 id="story-title">Comida mexicana, trato cercano y pedidos sin complicaciones.</h2>
+            <div class="fonda-line"></div>
 
-      <section class="section today-menu">
-        <div class="today-feature">
-          <p class="section-kicker">Menu de hoy</p>
-          <h2>Hoy: Chuleta hawaiana</h2>
-          <p>Tambien hay desayunos, antojitos y comida corrida con guarniciones.</p>
-        </div>
-        <div class="today-list">
-          <article>
-            <span>Desayunos</span>
-            <p>Chilaquiles rojos o verdes, huevos rancheros, huevos al gusto, tulancinguenas, molletes, sopes y huaraches.</p>
-          </article>
-          <article>
-            <span>Comida</span>
-            <p>Empanizado, fajitas de pollo, enchiladas, bistec encebollado, tacos dorados, chilaquiles y torta de chilaquiles.</p>
-          </article>
-          <article>
-            <span>Guisos</span>
-            <p>Pollo a la plancha, pollo deshebrado, carne asada, chorizo y quesillo para sopes, quesadillas y huaraches.</p>
-          </article>
+            <p>
+              En Fonda Mexicana preparamos comida al momento para que puedas
+              disfrutarla aquí, pedirla para recoger o recibirla donde la necesites.
+            </p>
+
+            <p>
+              Consulta los productos disponibles, revisa los detalles y arma tu
+              pedido desde la tienda sin depender de listas largas o mensajes confusos.
+            </p>
+
+            <a class="fonda-text-link" href="tienda.html">
+              Ver productos disponibles <span>→</span>
+            </a>
+          </div>
+
+          <figure class="fonda-story-photo">
+            <img
+              src="assets/home-tacos-900.jpg"
+              alt="Tacos preparados al momento en Fonda Mexicana"
+              width="900"
+              height="600"
+              loading="lazy"
+            >
+            <figcaption>
+              <strong>Fonda Mexicana</strong>
+              <span>Mérida, Yucatán</span>
+            </figcaption>
+          </figure>
         </div>
       </section>
 
-      <section class="section review-panel">
-        <div>
-          <p class="section-kicker">Lo que dicen los clientes</p>
-          <h2>Deliciosa, autentica y casera.</h2>
-        </div>
-        <p>Destacan el sazón, las porciones generosas, los buenos precios y un ambiente limpio y agradable.</p>
-      </section>
+      <section class="fonda-products" id="productos" aria-labelledby="products-title">
+        <div class="fonda-container">
+          <header class="fonda-heading center">
+            <p class="fonda-section-tag">Para pedir hoy</p>
+            <h2 id="products-title">Productos destacados</h2>
+            <div class="fonda-divider dark" aria-hidden="true">
+              <span></span><b>◆</b><span></span>
+            </div>
+            <p>Estos productos se actualizan directamente desde la tienda.</p>
+          </header>
 
-      <section class="section home-location" id="ubicacion">
-        <div>
-          <p class="section-kicker">Ubicacion del local</p>
-          <h2>Fonda Mexicana</h2>
-          <p>C. 37D 12, Las Aguilas, 97050 Merida, Yuc.</p>
-          <p>Telefono: 999 644 8579</p>
-          <p class="store-hours">Horario: lunes a viernes de 8:00 am a 4:00 pm.</p>
-          <div class="location-actions">
-            <a class="button primary" href="https://www.google.com/maps/dir/?api=1&destination=20.999769979845297,-89.62416438649322&travelmode=driving" target="_blank" rel="noopener">Como llegar</a>
+          <div
+            class="home-featured-grid"
+            id="homeFeaturedProducts"
+            aria-live="polite"
+          >
+            <div class="home-products-loading">Cargando productos destacados…</div>
+          </div>
+
+          <div class="fonda-center-action">
+            <a class="fonda-button outline" href="tienda.html">Ver todos los productos</a>
           </div>
         </div>
-        <div class="home-map">
-          <iframe
-            title="Ubicacion de Fonda Mexicana"
-            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4806.376132477655!2d-89.6237515!3d20.9998412!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8f56777acdba081f%3A0xd4955bfee08a7765!2sFonda%20Mexicana!5e1!3m2!1ses!2smx!4v1790699387729!5m2!1ses!2smx"
-            width="600"
-            height="450"
-            style="border:0"
-            allowfullscreen=""
-            loading="lazy"
-            referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </section>
+
+      <section class="fonda-gallery" aria-labelledby="gallery-title">
+        <div class="fonda-container">
+          <header class="fonda-heading center">
+            <p class="fonda-section-tag">Hecho al momento</p>
+            <h2 id="gallery-title">Sabor que se ve y se disfruta</h2>
+            <div class="fonda-divider dark" aria-hidden="true">
+              <span></span><b>◆</b><span></span>
+            </div>
+          </header>
+
+          <div class="fonda-gallery-grid">
+            <img src="assets/home-enchiladas-640.jpg" alt="Enchiladas mexicanas" loading="lazy">
+            <img src="assets/home-tacos-900.jpg" alt="Tacos mexicanos" loading="lazy">
+            <img src="assets/home-talavera-640.jpg" alt="Detalles de Fonda Mexicana" loading="lazy">
+          </div>
+        </div>
+      </section>
+
+      <section class="fonda-opinions" id="opiniones" aria-labelledby="opinions-title">
+        <div class="fonda-container fonda-opinions-grid">
+          <header class="fonda-opinions-intro">
+            <p class="fonda-section-tag">Tu experiencia cuenta</p>
+            <h2 id="opinions-title">Opiniones de quienes nos visitan</h2>
+            <p>Comparte cómo fue tu experiencia en Fonda Mexicana.</p>
+
+            <div class="fonda-rating-summary" data-opinions-summary aria-live="polite">
+              <strong data-opinions-average>—</strong>
+              <span class="fonda-stars" aria-hidden="true">★★★★★</span>
+              <span data-opinions-count>Aún no hay reseñas</span>
+            </div>
+
+            <button class="fonda-rating-action" type="button" data-opinions-open-rating>
+              Calificar la experiencia
+            </button>
+          </header>
+
+          <div class="fonda-opinions-panel">
+            <div class="fonda-opinions-panel-head">
+              <div>
+                <p class="fonda-section-tag">Comentarios</p>
+                <h3>Lo que dicen nuestros clientes</h3>
+              </div>
+              <button class="fonda-comment-action" type="button" data-opinions-open-comment>
+                Dejar comentario
+              </button>
+            </div>
+
+            <form class="fonda-opinion-composer" data-opinions-composer hidden>
+              <label for="fondaOpinionText">Tu comentario</label>
+              <textarea id="fondaOpinionText" maxlength="2000" placeholder="Cuéntanos cómo fue tu experiencia."></textarea>
+              <div>
+                <button class="fonda-comment-action" type="submit">Publicar comentario</button>
+                <button class="fonda-text-button" type="button" data-opinions-cancel>Cancelar</button>
+              </div>
+            </form>
+
+            <form class="fonda-rating-picker" data-opinions-rating hidden>
+              <p>¿Cómo calificarías tu experiencia?</p>
+              <div class="fonda-rating-options" role="group" aria-label="Calificación de una a cinco estrellas">
+                <button type="button" data-opinions-score="1" aria-label="1 estrella">★</button>
+                <button type="button" data-opinions-score="2" aria-label="2 estrellas">★</button>
+                <button type="button" data-opinions-score="3" aria-label="3 estrellas">★</button>
+                <button type="button" data-opinions-score="4" aria-label="4 estrellas">★</button>
+                <button type="button" data-opinions-score="5" aria-label="5 estrellas">★</button>
+              </div>
+              <button class="fonda-text-button" type="button" data-opinions-cancel>Cancelar</button>
+            </form>
+
+            <p class="fonda-opinions-status" data-opinions-status role="status" aria-live="polite"></p>
+            <div class="fonda-comments-list" data-opinions-list aria-live="polite">
+              <p class="fonda-comments-loading">Cargando opiniones…</p>
+            </div>
+            <button class="fonda-comments-toggle" type="button" data-opinions-toggle hidden>
+              Ver más comentarios
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="fonda-visit" id="ubicacion" aria-labelledby="visit-title">
+        <div class="fonda-container">
+          <header class="fonda-heading center">
+            <p class="fonda-section-tag">Visítanos</p>
+            <h2 id="visit-title">Dónde encontrarnos</h2>
+            <div class="fonda-divider dark" aria-hidden="true">
+              <span></span><b>◆</b><span></span>
+            </div>
+          </header>
+
+          <div class="fonda-visit-grid">
+            <article class="fonda-visit-card">
+              <p class="fonda-visit-label">Dirección</p>
+              <h3>Fonda Mexicana</h3>
+              <p>C. 37D 12, Las Águilas, 97050 Mérida, Yuc.</p>
+
+              <p class="fonda-visit-label">Horario</p>
+              <p>Lunes a viernes · 8:00 am – 4:00 pm</p>
+
+              <p class="fonda-visit-label">Teléfono</p>
+              <a href="tel:+9996448579">999 644 8579</a>
+
+              <div class="fonda-visit-actions">
+                <a
+                  class="fonda-button primary"
+                  href="https://www.google.com/maps/dir/?api=1&amp;destination=20.999769979845297,-89.62416438649322&amp;travelmode=driving"
+                  target="_blank"
+                  rel="noopener"
+                >Cómo llegar</a>
+                <a class="fonda-button outline" href="tienda.html">Hacer pedido</a>
+              </div>
+            </article>
+
+            <div class="fonda-map">
+              <iframe
+                title="Ubicación de Fonda Mexicana en Las Águilas, Mérida"
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d4806.376132477655!2d-89.6237515!3d20.9998412!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8f56777acdba081f%3A0xd4955bfee08a7765!2sFonda%20Mexicana!5e1!3m2!1ses!2smx!4v1790699387729!5m2!1ses!2smx"
+                loading="lazy"
+                allowfullscreen=""
+                referrerpolicy="strict-origin-when-cross-origin"
+              ></iframe>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="fonda-final">
+        <div class="fonda-final-shade"></div>
+        <div class="fonda-final-content">
+          <p class="fonda-kicker">Cuando tengas antojo</p>
+          <h2>Tu pedido empieza aquí.</h2>
+          <p>Consulta lo disponible y elige cómo quieres recibirlo.</p>
+          <a class="fonda-button primary" href="tienda.html">Explorar productos</a>
         </div>
       </section>
     </main>
+
+    <footer class="fonda-footer">
+      <div class="fonda-container fonda-footer-main">
+        <a class="fonda-brand" href="index.html">
+          <img src="assets/fonda-mexicana-logo.png" alt="">
+          <span>Fonda Mexicana</span>
+        </a>
+
+        <nav aria-label="Pie de página">
+          <a href="tienda.html">Productos</a>
+          <a href="carrito.html">Carrito</a>
+          <a href="mis-pedidos.html">Mis pedidos</a>
+          <a href="#ubicacion">Ubicación</a>
+        </nav>
+      </div>
+      <p>© <span data-current-year>2026</span> Fonda Mexicana · Mérida, Yucatán</p>
+    </footer>
+
+    <div class="toast" data-toast role="status" aria-live="polite"></div>
 
     <script src="app.js"></script>
   </body>
