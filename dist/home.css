@@ -2106,12 +2106,9 @@ body {
   }
 }
 
-[data-eb-photo-frame-for] {
+.fonda-story-photo-media,
+.fonda-gallery-grid > figure {
   position: relative;
-  overflow: hidden;
-}
-
-.fonda-story-photo-media {
   overflow: hidden;
 }
 
