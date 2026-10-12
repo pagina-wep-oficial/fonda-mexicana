@@ -1,0 +1,26 @@
+name: Deploy Fonda a Pages
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Armar carpeta limpia
+        run: |
+          rm -rf stage
+          mkdir stage
+          cp -r dist/. stage/
+          rm -rf stage/.wrangler
+          rm -f stage/app.js.bak-pickup-20261003
+
+      - name: Publicar en Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy stage --project-name=itm-fonda-mexicana --branch=main
