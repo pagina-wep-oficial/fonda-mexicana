@@ -10,16 +10,34 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&amp;family=Nunito+Sans:wght@400;600;700;800;900&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="home.css">
-  <script src="https://apis.google.com/_/scs/abc-static/_/js/k=gapi.lb.es.TUQXukiluKE.O/m=gapi_iframes/rt=j/sv=1/d=1/ed=1/rs=AHpOoo8oBcosocsOBlLjNfe-2z0OPMPm3A/cb=gapi.loaded_0?le=scs,fedcm_migration_mod" async=""></script><script src="https://apis.google.com/_/scs/abc-static/_/js/k=gapi.lb.es.TUQXukiluKE.O/m=gapi_iframes/rt=j/sv=1/d=1/ed=1/rs=AHpOoo8oBcosocsOBlLjNfe-2z0OPMPm3A/cb=gapi.loaded_0?le=scs" async=""></script><script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js" data-loaded="true"></script><script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-auth-compat.js" data-loaded="true"></script><script src="https://itm-void-excepcional.pages.dev/firebase-config.js" data-loaded="true"></script><script src="https://itm-void-excepcional.pages.dev/firebase-client.js" data-loaded="true"></script><script src="https://apis.google.com/js/api.js?onload=__iframefcb712595" type="text/javascript" charset="UTF-8" gapi_processed="true"></script></head>
+  <script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js" data-loaded="true"></script><script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-auth-compat.js" data-loaded="true"></script><script src="https://itm-void-excepcional.pages.dev/firebase-config.js" data-loaded="true"></script><script src="https://itm-void-excepcional.pages.dev/firebase-client.js" data-loaded="true"></script></head>
 
   <body data-page="inicio" class="home fonda-home">
     <a class="skip-link" href="#contenido">Saltar al contenido</a>
 
     <header class="fonda-hero" id="inicio">
-      <picture class="fonda-hero-media" aria-hidden="true">
-        <source media="(max-width: 700px)" srcset="assets/home-hero-cocina-640.jpg">
-        <source media="(max-width: 1100px)" srcset="assets/home-hero-cocina-900.jpg">
-        <img src="assets/home-hero-cocina-1600.jpg" alt="" width="1600" height="1067" fetchpriority="high">
+      <picture class="fonda-hero-media"
+        data-eb-photo-frame-for="hero.photo"
+        aria-hidden="true">
+        <source
+          data-eb-source-for="hero.photo"
+          media="(max-width: 700px)"
+          srcset="assets/home-hero-cocina-640.jpg">
+        <source
+          data-eb-source-for="hero.photo"
+          media="(max-width: 1100px)"
+          srcset="assets/home-hero-cocina-900.jpg">
+        <img
+          data-eb-editable="image"
+          data-eb-role="photo"
+          data-eb-section="hero"
+          data-eb-key="hero.photo"
+          data-eb-responsive="1"
+          src="assets/home-hero-cocina-1600.jpg"
+          alt=""
+          width="1600"
+          height="1067"
+          fetchpriority="high">
       </picture>
 
       <div class="fonda-hero-shade"></div>
@@ -27,7 +45,7 @@
       <nav class="fonda-nav" aria-label="Principal">
         <a class="fonda-brand" href="index.html" aria-label="Inicio Fonda Mexicana">
           <img data-eb-editable="image" data-eb-role="logo" data-eb-section="marca" data-eb-key="brand.logo" src="assets/fonda-mexicana-logo.png" alt="">
-          <span data-eb-editable="text" data-eb-role="name" data-eb-section="marca" data-eb-key="brand.name">Fonda Mexicana</span>
+          <span data-eb-editable="text" data-eb-role="name" data-eb-section="marca" data-eb-key="brand.name">Fonda Mexicana 1</span>
         </a>
 
         <div class="fonda-nav-links">
@@ -45,7 +63,7 @@
 
       <div class="fonda-hero-content">
         <p class="fonda-kicker" data-eb-editable="text" data-eb-role="eyebrow" data-eb-section="hero" data-eb-key="hero.kicker">Comida mexicana en Mérida, Yucatán</p>
-        <h1 data-eb-editable="text" data-eb-role="title" data-eb-section="hero" data-eb-key="brand.name">Fonda Mexicana</h1>
+        <h1 data-eb-editable="text" data-eb-role="title" data-eb-section="hero" data-eb-key="brand.name">Fonda Mexicana 1</h1>
 
         <div class="fonda-divider" aria-hidden="true">
           <span></span><b>◆</b><span></span>
@@ -93,7 +111,9 @@
           </div>
 
           <figure class="fonda-story-photo">
-            <img src="assets/home-tacos-900.jpg" data-eb-editable="image" data-eb-role="photo" data-eb-section="nosotros" data-eb-key="about.photo" alt="Tacos preparados al momento en Fonda Mexicana" width="900" height="600" loading="lazy">
+            <div class="fonda-story-photo-media" data-eb-photo-frame-for="about.photo">
+              <img src="assets/home-tacos-900.jpg" data-eb-editable="image" data-eb-role="photo" data-eb-section="nosotros" data-eb-key="about.photo" alt="Tacos preparados al momento en Fonda Mexicana" width="900" height="600" loading="lazy">
+            </div>
             <figcaption>
               <strong>Fonda Mexicana</strong>
               <span>Mérida, Yucatán</span>
@@ -204,9 +224,15 @@
           </header>
 
           <div class="fonda-gallery-grid">
-            <img data-eb-editable="image" data-eb-role="photo" data-eb-section="galeria" data-eb-key="gallery.photo_1" src="assets/home-enchiladas-640.jpg" alt="Enchiladas mexicanas" loading="lazy">
-            <img data-eb-editable="image" data-eb-role="photo" data-eb-section="galeria" data-eb-key="gallery.photo_2" src="assets/home-tacos-900.jpg" alt="Tacos mexicanos" loading="lazy">
-            <div data-eb-photo-frame="1" data-eb-photo-radius="20px 20px 8px 8px" style="position: relative; overflow: hidden; display: block; width: 100%; aspect-ratio: 1 / 1; border-radius: 20px 20px 8px 8px;"><img data-eb-editable="image" data-eb-role="photo" data-eb-section="galeria" data-eb-key="gallery.photo_3" src="dist/assets/home-talavera-640.jpg" alt="Detalles de Fonda Mexicana" loading="lazy" class="" style="position: absolute; inset: 71.9869% auto auto 43.6765%; width: 88.4474%; height: 59.011%; max-width: none; max-height: none; display: block; border-radius: 0px; transform-origin: center center; transform: translate(-50%, -50%) scale(6) rotate(346.153deg); object-fit: fill;"></div>
+            <figure data-eb-photo-frame-for="gallery.photo_1">
+              <img data-eb-editable="image" data-eb-role="photo" data-eb-section="galeria" data-eb-key="gallery.photo_1" src="assets/home-enchiladas-640.jpg" alt="Enchiladas mexicanas" loading="lazy">
+            </figure>
+            <figure data-eb-photo-frame-for="gallery.photo_2">
+              <img data-eb-editable="image" data-eb-role="photo" data-eb-section="galeria" data-eb-key="gallery.photo_2" src="assets/home-tacos-900.jpg" alt="Tacos mexicanos" loading="lazy">
+            </figure>
+            <figure data-eb-photo-frame-for="gallery.photo_3">
+              <img data-eb-editable="image" data-eb-role="photo" data-eb-section="galeria" data-eb-key="gallery.photo_3" src="assets/home-talavera-640.jpg" alt="Detalles de Fonda Mexicana" loading="lazy">
+            </figure>
           </div>
         </div>
       </section>
@@ -268,16 +294,7 @@
         <strong>Uno One</strong>
         <time>6 oct 2026</time>
       </header>
-      <p>Comida con sabor mexicano</p>
-      
-    </article>
-  
-    <article class="fonda-comment-card" style="--comment-index:1">
-      <header>
-        <strong>victor manuel ontiveros noh</strong>
-        <time>6 oct 2026</time>
-      </header>
-      <p>fdfd</p>
+      <p>Comida con sabor mexicana</p>
       
     </article>
   </div>
@@ -336,7 +353,7 @@
       <div class="fonda-container fonda-footer-main">
         <a class="fonda-brand" href="index.html">
           <img data-eb-editable="image" data-eb-role="logo" data-eb-section="marca" data-eb-key="brand.logo" src="assets/fonda-mexicana-logo.png" alt="">
-          <span data-eb-editable="text" data-eb-role="name" data-eb-section="marca" data-eb-key="brand.name">Fonda Mexicana</span>
+          <span data-eb-editable="text" data-eb-role="name" data-eb-section="marca" data-eb-key="brand.name">Fonda Mexicana 1</span>
         </a>
 
         <nav aria-label="Pie de página">
@@ -419,7 +436,75 @@
 
         <p class="profile-status" data-profile-status=""></p>
       </div>
+    </div><div class="profile-overlay" data-profile-overlay="" hidden="">
+      <div class="profile-popover" role="dialog" aria-modal="true" aria-labelledby="profile-popover-title">
+        <button class="profile-close" type="button" data-profile-close="" aria-label="Cerrar">×</button>
+
+        <div class="profile-identity">
+          <span class="profile-menu-avatar" data-profile-menu-avatar=""><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4"></circle><path d="M5.5 19c.8-3.2 3-4.8 6.5-4.8s5.7 1.6 6.5 4.8"></path></svg></span>
+          <div>
+            <strong id="profile-popover-title" data-profile-name="">Iniciar sesión</strong>
+            <small data-profile-email=""></small>
+          </div>
+        </div>
+
+        <p class="profile-message" data-profile-message="">Inicia sesión para guardar tus datos y facilitar tus pedidos.</p>
+
+        <div class="profile-actions">
+          <button class="button primary" type="button" data-profile-login="">
+            Iniciar sesión con Google
+          </button>
+
+          <a class="button secondary" href="perfil-de-usuario.html" data-profile-config="" hidden="">
+            Configurar perfil
+          </a>
+
+          <a class="button secondary" href="mis-pedidos.html" data-profile-orders="" hidden="">
+            Mis pedidos
+          </a>
+
+          <button class="button light" type="button" data-profile-logout="" hidden="">
+            Cerrar sesión
+          </button>
+        </div>
+
+        <p class="profile-status" data-profile-status=""></p>
+      </div>
+    </div><div class="profile-overlay" data-profile-overlay="" hidden="">
+      <div class="profile-popover" role="dialog" aria-modal="true" aria-labelledby="profile-popover-title">
+        <button class="profile-close" type="button" data-profile-close="" aria-label="Cerrar">×</button>
+
+        <div class="profile-identity">
+          <span class="profile-menu-avatar" data-profile-menu-avatar=""><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4"></circle><path d="M5.5 19c.8-3.2 3-4.8 6.5-4.8s5.7 1.6 6.5 4.8"></path></svg></span>
+          <div>
+            <strong id="profile-popover-title" data-profile-name="">Iniciar sesión</strong>
+            <small data-profile-email=""></small>
+          </div>
+        </div>
+
+        <p class="profile-message" data-profile-message="">Inicia sesión para guardar tus datos y facilitar tus pedidos.</p>
+
+        <div class="profile-actions">
+          <button class="button primary" type="button" data-profile-login="">
+            Iniciar sesión con Google
+          </button>
+
+          <a class="button secondary" href="perfil-de-usuario.html" data-profile-config="" hidden="">
+            Configurar perfil
+          </a>
+
+          <a class="button secondary" href="mis-pedidos.html" data-profile-orders="" hidden="">
+            Mis pedidos
+          </a>
+
+          <button class="button light" type="button" data-profile-logout="" hidden="">
+            Cerrar sesión
+          </button>
+        </div>
+
+        <p class="profile-status" data-profile-status=""></p>
+      </div>
     </div>
   
 
-<iframe ng-non-bindable="" frameborder="0" hspace="0" marginheight="0" marginwidth="0" scrolling="no" tabindex="-1" vspace="0" width="100%" aria-hidden="true" id="I0_1791837715672" name="I0_1791837715672" src="https://itm-execional-build.firebaseapp.com/__/auth/iframe?apiKey=AIzaSyBlw96lG5wPRYfMvJ_eTbgjm2cL4xiwX4U&amp;appName=%5BDEFAULT%5D&amp;v=12.18.0&amp;eid=p&amp;usegapi=1&amp;jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.es.TUQXukiluKE.O%2Fd%3D1%2Frs%3DAHpOoo8oBcosocsOBlLjNfe-2z0OPMPm3A%2Fm%3D__features__#id=I0_1791837715672&amp;_gfid=I0_1791837715672&amp;parent=about%3A%2F%2F&amp;pfname=&amp;rpctoken=12318223" style="position: absolute; top: -100px; width: 1px; height: 1px;"></iframe><iframe ng-non-bindable="" frameborder="0" hspace="0" marginheight="0" marginwidth="0" scrolling="no" tabindex="-1" vspace="0" width="100%" aria-hidden="true" id="I0_1791840153636" name="I0_1791840153636" src="https://itm-execional-build.firebaseapp.com/__/auth/iframe?apiKey=AIzaSyBlw96lG5wPRYfMvJ_eTbgjm2cL4xiwX4U&amp;appName=%5BDEFAULT%5D&amp;v=12.18.0&amp;eid=p&amp;usegapi=1&amp;jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.es.TUQXukiluKE.O%2Fd%3D1%2Frs%3DAHpOoo8oBcosocsOBlLjNfe-2z0OPMPm3A%2Fm%3D__features__#id=I0_1791840153636&amp;_gfid=I0_1791840153636&amp;parent=about%3A%2F%2F&amp;pfname=&amp;rpctoken=38236252" style="position: absolute; top: -100px; width: 1px; height: 1px;"></iframe></body></html>
+</body></html>
