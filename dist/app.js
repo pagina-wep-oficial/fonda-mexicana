@@ -7,6 +7,7 @@ let storeLiveClosing = false;
 let storeSettingsRefreshTimer = 0;
 let storeSettingsRefreshRequest = null;
 let customerOrdersRefreshTimer = 0;
+let homeFeaturedRefreshTimer = 0;
 let storeMode = "whatsapp_catalog";
 let enabledPaymentMethods = ["whatsapp"];
 let defaultPaymentMethod = "whatsapp";
@@ -33,7 +34,53 @@ const STORE_CONFIG_URL = "/store-config.json";
 const CATALOG_VIEW_KEY = `itm.catalog.view:${ITM_PROJECT_ID}`;
 const CATALOG_CACHE_KEY = `itm.catalog.cache:${ITM_PROJECT_ID}`;
 const CATALOG_CACHE_MAX_AGE_MS = 90 * 1000;
+const CATALOG_REQUEST_TIMEOUT_MS = 8 * 1000;
+const CATALOG_REQUEST_RETRIES = 1;
 const OPINIONS_INTENT_KEY = `itm.opinions.intent:${ITM_PROJECT_ID}`;
+
+function waitForCatalogRetry(delay = 350) {
+  return new Promise((resolve) => window.setTimeout(resolve, delay));
+}
+
+async function fetchCatalogResponse(url, { signal } = {}) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= CATALOG_REQUEST_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, CATALOG_REQUEST_TIMEOUT_MS);
+
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+        cache: "no-store"
+      });
+
+      if (!response.ok) return response;
+      return response;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = timedOut
+        ? new Error("CATALOG_TIMEOUT")
+        : error;
+
+      if (attempt === CATALOG_REQUEST_RETRIES) throw lastError;
+      await waitForCatalogRetry();
+    } finally {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", abortFromCaller);
+    }
+  }
+
+  throw lastError || new Error("CATALOG_UNAVAILABLE");
+}
 
 function applyStorePaymentSettings(settings = {}) {
   storeMode =
@@ -248,6 +295,15 @@ function scheduleLiveCartQuote() {
   }, 900);
 }
 
+function scheduleHomeFeaturedRefresh() {
+  if (document.body.dataset.page !== "inicio" || homeFeaturedRefreshTimer) return;
+
+  homeFeaturedRefreshTimer = window.setTimeout(() => {
+    homeFeaturedRefreshTimer = 0;
+    void loadHomeFeaturedProducts({ keepVisible: true });
+  }, 350);
+}
+
 function handleStoreLiveMessage(raw) {
   let event;
 
@@ -268,6 +324,7 @@ function handleStoreLiveMessage(raw) {
 
     scheduleLiveDetailRefresh();
     scheduleLiveCartQuote();
+    scheduleHomeFeaturedRefresh();
     return;
   }
 
@@ -278,6 +335,7 @@ function handleStoreLiveMessage(raw) {
     scheduleLiveCatalogRefresh(event);
     scheduleLiveDetailRefresh(event);
     scheduleLiveCartQuote();
+    scheduleHomeFeaturedRefresh();
     return;
   }
 
@@ -1038,6 +1096,8 @@ async function restoreCatalogViewState(onInitialCatalogReady = null) {
       onInitialCatalogReady();
     }
 
+    await loadCatalogProducts({ reset: true, keepVisible: true });
+    await finishCatalogViewRestore(saved);
     return;
   }
 
@@ -2443,12 +2503,7 @@ async function fetchPublicCatalogProduct(productId) {
   endpoint.searchParams.set("offset", "0");
   endpoint.searchParams.set("id", String(productId));
 
-  const response = await fetch(endpoint, {
-    headers: {
-      Accept: "application/json"
-    },
-    cache: "no-store"
-  });
+  const response = await fetchCatalogResponse(endpoint);
 
   const body = await response.json();
 
@@ -2511,7 +2566,7 @@ async function patchLiveCatalogProduct(productId) {
   return true;
 }
 
-async function loadCatalogProducts({ reset = true, productId = null } = {}) {
+async function loadCatalogProducts({ reset = true, productId = null, keepVisible = false } = {}) {
   if (!reset && (!catalogState.hasMore || catalogState.loading)) {
     return;
   }
@@ -2523,7 +2578,7 @@ async function loadCatalogProducts({ reset = true, productId = null } = {}) {
     catalogState.hasMore = true;
 
     const grid = document.getElementById("productGrid");
-    if (grid) {
+    if (grid && !keepVisible) {
       grid.innerHTML = `<div class="empty-state">Cargando productos...</div>`;
     }
   }
@@ -2557,10 +2612,7 @@ async function loadCatalogProducts({ reset = true, productId = null } = {}) {
       endpoint.searchParams.set("category", activeCategory);
     }
 
-    const response = await fetch(endpoint, {
-      headers: {
-        Accept: "application/json"
-      },
+    const response = await fetchCatalogResponse(endpoint, {
       signal: catalogRequestController.signal
     });
 
@@ -2621,6 +2673,7 @@ async function loadCatalogProducts({ reset = true, productId = null } = {}) {
 
     renderFilters();
     renderCatalog();
+    return true;
   } catch (error) {
     if (error?.name !== "AbortError") {
       console.error(
@@ -2632,9 +2685,13 @@ async function loadCatalogProducts({ reset = true, productId = null } = {}) {
 
       if (grid && reset) {
         grid.innerHTML =
-          `<div class="empty-state">No se pudieron cargar los productos.</div>`;
+          `<div class="empty-state"><strong>No pudimos cargar los productos.</strong><button type="button" class="button secondary" data-retry-catalog>Reintentar</button></div>`;
+        grid.querySelector("[data-retry-catalog]")?.addEventListener("click", () => {
+          void loadCatalogProducts({ reset: true });
+        });
       }
     }
+    return false;
   } finally {
     catalogState.loading = false;
   }
@@ -2719,10 +2776,10 @@ function homeFeaturedProductCard(product) {
   `;
 }
 
-async function initHome() {
+async function loadHomeFeaturedProducts({ keepVisible = false } = {}) {
   const holder = document.getElementById("homeFeaturedProducts");
 
-  if (!holder) return;
+  if (!holder) return false;
 
   try {
     const endpoint = new URL(ITM_PRODUCTS_URL);
@@ -2730,12 +2787,7 @@ async function initHome() {
     endpoint.searchParams.set("limit", "24");
     endpoint.searchParams.set("offset", "0");
 
-    const response = await fetch(endpoint, {
-      headers: {
-        Accept: "application/json"
-      },
-      cache: "no-store"
-    });
+    const response = await fetchCatalogResponse(endpoint);
 
     const body = await response.json().catch(() => ({}));
 
@@ -2770,12 +2822,13 @@ async function initHome() {
           </a>
         </div>
       `;
-      return;
+      return true;
     }
 
     holder.innerHTML = featuredProducts
       .map(homeFeaturedProductCard)
       .join("");
+    return true;
 
   } catch (error) {
     console.warn(
@@ -2783,15 +2836,25 @@ async function initHome() {
       error
     );
 
-    holder.innerHTML = `
-      <div class="home-products-empty">
-        <strong>No pudimos cargar los productos ahora.</strong>
-        <a class="button secondary" href="tienda.html">
-          Abrir tienda
-        </a>
-      </div>
-    `;
+    if (!keepVisible) {
+      holder.innerHTML = `
+        <div class="home-products-empty">
+          <strong>No pudimos cargar los productos ahora.</strong>
+          <button type="button" class="button secondary" data-retry-home-products>Reintentar</button>
+        </div>
+      `;
+      holder.querySelector("[data-retry-home-products]")?.addEventListener("click", () => {
+        void loadHomeFeaturedProducts();
+      });
+    }
+    return false;
   }
+}
+
+async function initHome() {
+  await loadStaticStoreConfig();
+  connectStoreLive();
+  await loadHomeFeaturedProducts();
 }
 
 function opinionIntent() {
@@ -3240,12 +3303,25 @@ async function initDetail({ preferredQuantity = null } = {}) {
 
   const id = new URLSearchParams(window.location.search).get("id");
 
-  await loadCatalogProducts({
+  const catalogLoaded = await loadCatalogProducts({
     reset: true,
     productId: id
   });
 
   connectStoreLive();
+
+  if (!catalogLoaded) {
+    holder.innerHTML = `
+      <div class="empty-state">
+        <strong>No pudimos cargar este producto.</strong>
+        <button type="button" class="button secondary" data-retry-detail-product>Reintentar</button>
+      </div>
+    `;
+    holder.querySelector("[data-retry-detail-product]")?.addEventListener("click", () => {
+      void initDetail({ preferredQuantity });
+    });
+    return;
+  }
 
   const product = getProduct(id);
 
