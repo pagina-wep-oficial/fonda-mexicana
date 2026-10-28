@@ -2181,7 +2181,7 @@ const payment = productPaymentLabel(product);
 
   return `
     <article class="product-card">
-      <img src="${product.image_url || GENERIC_IMAGE}" alt="${product.name}" loading="lazy">
+      ${productImageMarkup(product)}
 
       <div class="product-body">
         <div class="product-meta">
@@ -2343,6 +2343,12 @@ function renderCatalog() {
 }
 
 function mapPublicCatalogProduct(product) {
+  const media = Array.isArray(product.media)
+    ? product.media
+      .filter((item) => item?.media_type === "image" && item.source_url)
+      .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || Number(left.sort_order) - Number(right.sort_order))
+    : [];
+
   return {
     id: String(product.id),
     name: String(product.name || "Producto"),
@@ -2352,13 +2358,8 @@ function mapPublicCatalogProduct(product) {
     compare_at_price: Number(product.compare_at_price) || 0,
     unit_label: String(product.unit_label || "").trim(),
     description: String(product.description || ""),
-    image_url: String(
-      product.image_url ||
-        product.media?.find(
-          (media) => media.media_type === "image"
-        )?.source_url ||
-        ""
-    ),
+    image_url: String(product.image_url || media[0]?.source_url || ""),
+    media,
     inventory_enabled: product.inventory_enabled === true,
     stock_quantity: Number(product.stock_quantity) || 0,
     reserved_quantity: Number(product.reserved_quantity) || 0,
@@ -2371,6 +2372,40 @@ function mapPublicCatalogProduct(product) {
     default_payment_method:
       product.default_payment_method || defaultPaymentMethod
   };
+}
+
+function productGallery(product) {
+  const media = Array.isArray(product?.media)
+    ? product.media.filter((item) => item?.source_url)
+    : [];
+
+  return media.length
+    ? media
+    : product?.image_url
+      ? [{ source_url: product.image_url, fit_mode: "cover", focal_x: 50, focal_y: 50, zoom: 1, rotation: 0 }]
+      : [];
+}
+
+function productPrimaryMedia(product) {
+  return productGallery(product).find((item) => item.is_primary) ||
+    productGallery(product)[0] ||
+    { source_url: GENERIC_IMAGE, fit_mode: "cover", focal_x: 50, focal_y: 50, zoom: 1, rotation: 0 };
+}
+
+function productImageStyle(media) {
+  const fit = media?.fit_mode === "contain" ? "contain" : "cover";
+  const x = Math.max(0, Math.min(100, Number(media?.focal_x ?? 50)));
+  const y = Math.max(0, Math.min(100, Number(media?.focal_y ?? 50)));
+  const zoom = Math.max(1, Math.min(3, Number(media?.zoom ?? 1)));
+  const rotation = Math.max(-180, Math.min(180, Number(media?.rotation ?? 0)));
+
+  return `object-fit:${fit};object-position:${x}% ${y}%;transform:scale(${zoom}) rotate(${rotation}deg)`;
+}
+
+function productImageMarkup(product, className = "", loading = "lazy") {
+  const media = productPrimaryMedia(product);
+
+  return `<img${className ? ` class="${className}"` : ""} src="${escapeHtml(media.source_url || GENERIC_IMAGE)}" alt="${escapeHtml(product.name)}" loading="${loading}" style="${productImageStyle(media)}">`;
 }
 
 async function fetchPublicCatalogProduct(productId) {
@@ -2616,7 +2651,6 @@ async function initCatalog() {
 }
 
 function homeFeaturedProductCard(product) {
-  const imageUrl = product.image_url || GENERIC_IMAGE;
   const productName = escapeHtml(product.name);
   const productCategory = escapeHtml(product.category || "Producto");
   const productDescription = escapeHtml(product.description || "");
@@ -2625,11 +2659,7 @@ function homeFeaturedProductCard(product) {
   return `
     <article class="home-featured-card">
       <a class="home-featured-image" href="${productUrl}">
-        <img
-          src="${escapeHtml(imageUrl)}"
-          alt="${productName}"
-          loading="lazy"
-        >
+        ${productImageMarkup(product)}
       </a>
 
       <div class="home-featured-body">
@@ -3230,11 +3260,11 @@ async function initDetail({ preferredQuantity = null } = {}) {
   const detailPayment = productPaymentLabel(product);
 
   holder.innerHTML = `
-    <div class="detail-media">
-      <img
-        src="${product.image_url || GENERIC_IMAGE}"
-        alt="${product.name}"
-      >
+    <div class="detail-gallery" data-detail-gallery>
+      <div class="detail-media">
+        ${productImageMarkup(product, "detail-main-image", "eager")}
+      </div>
+      ${productGallery(product).length > 1 ? `<div class="detail-thumbnails">${productGallery(product).map((media, index) => `<button type="button" class="detail-thumbnail${media === productPrimaryMedia(product) ? " active" : ""}" data-detail-media="${index}" aria-label="Ver foto ${index + 1}"><img src="${escapeHtml(media.source_url)}" alt="${escapeHtml(product.name)}" style="${productImageStyle(media)}"></button>`).join("")}</div>` : ""}
     </div>
 
     <div class="detail-copy">
@@ -3289,6 +3319,17 @@ async function initDetail({ preferredQuantity = null } = {}) {
       </div>
     </div>
   `;
+
+  holder.querySelectorAll("[data-detail-media]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const media = productGallery(product)[Number(button.dataset.detailMedia)];
+      const image = holder.querySelector(".detail-main-image");
+      if (!media || !image) return;
+      image.src = media.source_url;
+      image.style.cssText = productImageStyle(media);
+      holder.querySelectorAll("[data-detail-media]").forEach((item) => item.classList.toggle("active", item === button));
+    });
+  });
 
   const quantityInput = holder.querySelector("#detailQuantity");
 
