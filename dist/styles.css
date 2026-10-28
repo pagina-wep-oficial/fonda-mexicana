@@ -926,6 +926,25 @@ textarea:focus {
   padding-top: 10px;
 }
 
+.detail-video {
+  margin-top: 14px;
+}
+
+.detail-video p {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: .9rem;
+  font-weight: 700;
+}
+
+.detail-video video {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #101510;
+}
+
 .detail-thumbnail {
   flex: 0 0 70px;
   aspect-ratio: 1;

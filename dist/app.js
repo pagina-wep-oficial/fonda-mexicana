@@ -2343,11 +2343,13 @@ function renderCatalog() {
 }
 
 function mapPublicCatalogProduct(product) {
-  const media = Array.isArray(product.media)
+  const allMedia = Array.isArray(product.media)
     ? product.media
-      .filter((item) => item?.media_type === "image" && item.source_url)
-      .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || Number(left.sort_order) - Number(right.sort_order))
     : [];
+  const media = allMedia
+    .filter((item) => item?.media_type === "image" && item.source_url)
+    .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || Number(left.sort_order) - Number(right.sort_order));
+  const video = allMedia.find((item) => item?.media_type === "video" && item.source_url) || null;
 
   return {
     id: String(product.id),
@@ -2360,6 +2362,7 @@ function mapPublicCatalogProduct(product) {
     description: String(product.description || ""),
     image_url: String(product.image_url || media[0]?.source_url || ""),
     media,
+    video,
     inventory_enabled: product.inventory_enabled === true,
     stock_quantity: Number(product.stock_quantity) || 0,
     reserved_quantity: Number(product.reserved_quantity) || 0,
@@ -2384,6 +2387,10 @@ function productGallery(product) {
     : product?.image_url
       ? [{ source_url: product.image_url, fit_mode: "cover", focal_x: 50, focal_y: 50, zoom: 1, rotation: 0 }]
       : [];
+}
+
+function productVideo(product) {
+  return product?.video?.source_url ? product.video : null;
 }
 
 function productPrimaryMedia(product) {
@@ -3265,6 +3272,7 @@ async function initDetail({ preferredQuantity = null } = {}) {
         ${productImageMarkup(product, "detail-main-image", "eager")}
       </div>
       ${productGallery(product).length > 1 ? `<div class="detail-thumbnails">${productGallery(product).map((media, index) => `<button type="button" class="detail-thumbnail${media === productPrimaryMedia(product) ? " active" : ""}" data-detail-media="${index}" aria-label="Ver foto ${index + 1}"><img src="${escapeHtml(media.source_url)}" alt="${escapeHtml(product.name)}" style="${productImageStyle(media)}"></button>`).join("")}</div>` : ""}
+      ${productVideo(product) ? `<section class="detail-video"><p>Video del producto</p><video controls preload="metadata" playsinline src="${escapeHtml(productVideo(product).source_url)}">Tu navegador no puede reproducir este video.</video></section>` : ""}
     </div>
 
     <div class="detail-copy">
