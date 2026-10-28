@@ -2379,7 +2379,7 @@ function mapPublicCatalogProduct(product) {
 
 function productGallery(product) {
   const media = Array.isArray(product?.media)
-    ? product.media.filter((item) => item?.source_url)
+    ? product.media.filter((item) => item?.source_url && item.media_type !== "video")
     : [];
 
   return media.length
@@ -2666,7 +2666,7 @@ function homeFeaturedProductCard(product) {
   return `
     <article class="home-featured-card">
       <a class="home-featured-image" href="${productUrl}">
-        ${productImageMarkup(product)}
+      <div class="product-media-frame">${productImageMarkup(product)}</div>
       </a>
 
       <div class="home-featured-body">
