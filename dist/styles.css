@@ -848,13 +848,18 @@ textarea:focus {
 }
 
 .product-media-frame {
+  display: grid;
+  place-items: center;
   aspect-ratio: 1;
   overflow: hidden;
-  background: #f3eadb;
+  background: linear-gradient(145deg, #fbf8f2, #eee5d8);
 }
 
 .product-media-frame img,
 .detail-media img {
+  display: block;
+  min-width: 0;
+  min-height: 0;
   max-height: none;
   object-fit: cover;
   transform-origin: center;
@@ -912,16 +917,25 @@ textarea:focus {
 
 .detail-media {
   display: grid;
+  place-items: center;
   aspect-ratio: 1;
   overflow: hidden;
-  background: white;
+  background: linear-gradient(145deg, #fff, #f7f2ea);
   border: 1px solid var(--line);
   border-radius: 18px;
   box-shadow: var(--shadow);
 }
 
-.detail-media img {
+.detail-media img,
+.detail-main-video {
   width: 100%;
+  height: 100%;
+}
+
+.detail-main-video {
+  display: block;
+  object-fit: contain;
+  background: #101510;
 }
 
 .detail-thumbnails {
@@ -931,28 +945,9 @@ textarea:focus {
   padding-top: 10px;
 }
 
-.detail-video {
-  margin-top: 14px;
-}
-
-.detail-video p {
-  margin: 0 0 7px;
-  color: var(--muted);
-  font-size: .9rem;
-  font-weight: 700;
-}
-
-.detail-video video {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: contain;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #101510;
-}
-
 .detail-thumbnail {
+  display: grid;
+  place-items: center;
   flex: 0 0 70px;
   aspect-ratio: 1;
   overflow: hidden;
@@ -970,6 +965,28 @@ textarea:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.detail-thumbnail-video {
+  gap: 4px;
+  color: white;
+  background: linear-gradient(145deg, #345d4a, #142a20);
+  font-weight: 800;
+}
+
+.detail-thumbnail-video span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.66);
+  border-radius: 50%;
+  font-size: 12px;
+  padding-left: 2px;
+}
+
+.detail-thumbnail-video small {
+  font-size: 10px;
 }
 
 .detail-copy {

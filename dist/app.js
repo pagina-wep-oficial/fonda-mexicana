@@ -2393,6 +2393,13 @@ function productVideo(product) {
   return product?.video?.source_url ? product.video : null;
 }
 
+function productDetailMedia(product) {
+  const images = productGallery(product);
+  const media = images.length ? images : [productPrimaryMedia(product)];
+  const video = productVideo(product);
+  return video ? [...media, { ...video, media_type: "video" }] : media;
+}
+
 function productPrimaryMedia(product) {
   return productGallery(product).find((item) => item.is_primary) ||
     productGallery(product)[0] ||
@@ -2413,6 +2420,20 @@ function productImageMarkup(product, className = "", loading = "lazy") {
   const media = productPrimaryMedia(product);
 
   return `<img${className ? ` class="${className}"` : ""} src="${escapeHtml(media.source_url || GENERIC_IMAGE)}" alt="${escapeHtml(product.name)}" loading="${loading}" style="${productImageStyle(media)}">`;
+}
+
+function detailMediaMarkup(media, product) {
+  if (media?.media_type === "video") {
+    return `<video class="detail-main-video" controls preload="metadata" playsinline src="${escapeHtml(media.source_url)}">Tu navegador no puede reproducir este video.</video>`;
+  }
+  return `<img class="detail-main-image" src="${escapeHtml(media?.source_url || GENERIC_IMAGE)}" alt="${escapeHtml(product.name)}" loading="eager" style="${productImageStyle(media)}">`;
+}
+
+function detailThumbnailMarkup(media, product, index, active) {
+  if (media?.media_type === "video") {
+    return `<button type="button" class="detail-thumbnail detail-thumbnail-video${active ? " active" : ""}" data-detail-media="${index}" aria-label="Ver video del producto"><span aria-hidden="true">▶</span><small>Video</small></button>`;
+  }
+  return `<button type="button" class="detail-thumbnail${active ? " active" : ""}" data-detail-media="${index}" aria-label="Ver foto ${index + 1}"><img src="${escapeHtml(media.source_url)}" alt="${escapeHtml(product.name)}" style="${productImageStyle(media)}"></button>`;
 }
 
 async function fetchPublicCatalogProduct(productId) {
@@ -3265,14 +3286,15 @@ async function initDetail({ preferredQuantity = null } = {}) {
       : safeRequestedQuantity;
 
   const detailPayment = productPaymentLabel(product);
+  const detailMedia = productDetailMedia(product);
+  const selectedDetailMedia = detailMedia[0];
 
   holder.innerHTML = `
     <div class="detail-gallery" data-detail-gallery>
       <div class="detail-media">
-        ${productImageMarkup(product, "detail-main-image", "eager")}
+        ${detailMediaMarkup(selectedDetailMedia, product)}
       </div>
-      ${productGallery(product).length > 1 ? `<div class="detail-thumbnails">${productGallery(product).map((media, index) => `<button type="button" class="detail-thumbnail${media === productPrimaryMedia(product) ? " active" : ""}" data-detail-media="${index}" aria-label="Ver foto ${index + 1}"><img src="${escapeHtml(media.source_url)}" alt="${escapeHtml(product.name)}" style="${productImageStyle(media)}"></button>`).join("")}</div>` : ""}
-      ${productVideo(product) ? `<section class="detail-video"><p>Video del producto</p><video controls preload="metadata" playsinline src="${escapeHtml(productVideo(product).source_url)}">Tu navegador no puede reproducir este video.</video></section>` : ""}
+      ${detailMedia.length > 1 ? `<div class="detail-thumbnails">${detailMedia.map((media, index) => detailThumbnailMarkup(media, product, index, index === 0)).join("")}</div>` : ""}
     </div>
 
     <div class="detail-copy">
@@ -3330,11 +3352,10 @@ async function initDetail({ preferredQuantity = null } = {}) {
 
   holder.querySelectorAll("[data-detail-media]").forEach((button) => {
     button.addEventListener("click", () => {
-      const media = productGallery(product)[Number(button.dataset.detailMedia)];
-      const image = holder.querySelector(".detail-main-image");
-      if (!media || !image) return;
-      image.src = media.source_url;
-      image.style.cssText = productImageStyle(media);
+      const media = detailMedia[Number(button.dataset.detailMedia)];
+      const frame = holder.querySelector(".detail-media");
+      if (!media || !frame) return;
+      frame.innerHTML = detailMediaMarkup(media, product);
       holder.querySelectorAll("[data-detail-media]").forEach((item) => item.classList.toggle("active", item === button));
     });
   });
