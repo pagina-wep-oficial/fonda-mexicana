@@ -1141,7 +1141,10 @@ async function refreshCatalogKeepingView() {
 
   const saved = getCatalogViewState();
 
-  await loadCatalogProducts({ reset: true });
+  await loadCatalogProducts({
+    reset: true,
+    keepVisible: true
+  });
   await finishCatalogViewRestore(saved);
 }
 
@@ -2233,41 +2236,57 @@ function productCard(product) {
       : `Disponibles: ${product.available_quantity}`
     : "";
 
-const featuredLabel = product.featured
-  ? `<span class="category">★ Destacado</span>`
-  : "";
+  const featuredLabel = product.featured
+    ? `<span class="category">★ Destacado</span>`
+    : "";
 
-const payment = productPaymentLabel(product);
+  const payment = productPaymentLabel(product);
 
   return `
-    <article class="product-card">
-      ${productImageMarkup(product)}
+    <article class="product-card" data-product-id="${product.id}">
+      <div data-product-field="media">
+        ${productImageMarkup(product)}
+      </div>
 
       <div class="product-body">
         <div class="product-meta">
-          <span class="category">${
+          <span class="category" data-product-field="category">${
             String(product.category || "").toLowerCase() === "destacados"
               ? "Destacados"
               : product.category
           }</span>
-          ${renderProductPrice(product)}
-          ${productUnitText(product) ? `<small class="product-unit">${productUnitText(product)}</small>` : ""}
+
+          <span data-product-field="price">
+            ${renderProductPrice(product)}
+          </span>
+
+          <span data-product-field="unit">
+            ${
+              productUnitText(product)
+                ? `<small class="product-unit">${productUnitText(product)}</small>`
+                : ""
+            }
+          </span>
         </div>
 
-        ${featuredLabel}
+        <div data-product-field="featured">${featuredLabel}</div>
 
-        <h2>${product.name}</h2>
-        <p>${product.description}</p>
-${stockLabel ? `<p class="product-stock">${stockLabel}</p>` : ""}
+        <h2 data-product-field="name">${product.name}</h2>
+        <p data-product-field="description">${product.description}</p>
 
-<p
-  class="product-payment-method"
-  data-payment-method="${payment.id}"
->
-  ${payment.label}
-</p>
+        <div data-product-field="stock">
+          ${stockLabel ? `<p class="product-stock">${stockLabel}</p>` : ""}
+        </div>
 
-<div class="product-actions">
+        <p
+          class="product-payment-method"
+          data-product-field="payment"
+          data-payment-method="${payment.id}"
+        >
+          ${payment.label}
+        </p>
+
+        <div class="product-actions">
           <button
             class="button primary"
             type="button"
@@ -2277,7 +2296,11 @@ ${stockLabel ? `<p class="product-stock">${stockLabel}</p>` : ""}
             ${outOfStock ? "Agotado" : "Agregar"}
           </button>
 
-          <a class="button secondary" href="detalle.html?id=${product.id}">
+          <a
+            class="button secondary"
+            data-product-detail-link
+            href="detalle.html?id=${product.id}"
+          >
             Ver detalles
           </a>
         </div>
@@ -2302,6 +2325,83 @@ function hydrateCatalogSlot(slot) {
       addToCart(button.dataset.add);
     });
   });
+}
+
+function updateCatalogCard(slot, product) {
+  const currentCard = slot.querySelector("[data-product-id]");
+  if (!currentCard) {
+    hydrateCatalogSlot(slot);
+    return;
+  }
+
+  const template = document.createElement("template");
+  template.innerHTML = productCard(product).trim();
+
+  const nextCard = template.content.firstElementChild;
+  if (!nextCard) return;
+
+  const currentMedia = currentCard.querySelector(
+    '[data-product-field="media"]'
+  );
+  const nextMedia = nextCard.querySelector(
+    '[data-product-field="media"]'
+  );
+
+  const currentImage = currentMedia?.querySelector("img");
+  const nextImage = nextMedia?.querySelector("img");
+
+  const imageChanged =
+    currentImage?.getAttribute("src") !== nextImage?.getAttribute("src") ||
+    currentImage?.getAttribute("style") !== nextImage?.getAttribute("style");
+
+  if (imageChanged && currentMedia && nextMedia) {
+    currentMedia.replaceWith(nextMedia.cloneNode(true));
+  }
+
+  [
+    "category",
+    "price",
+    "unit",
+    "featured",
+    "name",
+    "description",
+    "stock",
+    "payment"
+  ].forEach((field) => {
+    const currentField = currentCard.querySelector(
+      `[data-product-field="${field}"]`
+    );
+    const nextField = nextCard.querySelector(
+      `[data-product-field="${field}"]`
+    );
+
+    if (currentField && nextField) {
+      currentField.replaceWith(nextField.cloneNode(true));
+    }
+  });
+
+  const currentAdd = currentCard.querySelector("[data-add]");
+  const nextAdd = nextCard.querySelector("[data-add]");
+
+  if (currentAdd && nextAdd) {
+    currentAdd.disabled = nextAdd.disabled;
+    currentAdd.textContent = nextAdd.textContent;
+    currentAdd.setAttribute(
+      "aria-disabled",
+      nextAdd.getAttribute("aria-disabled") || "false"
+    );
+  }
+
+  const currentDetail = currentCard.querySelector(
+    "[data-product-detail-link]"
+  );
+  const nextDetail = nextCard.querySelector(
+    "[data-product-detail-link]"
+  );
+
+  if (currentDetail && nextDetail) {
+    currentDetail.href = nextDetail.href;
+  }
 }
 
 function setupVirtualCatalog() {
@@ -2529,18 +2629,17 @@ function refreshCatalogSlot(productIndex) {
     `[data-catalog-slot][data-catalog-index="${productIndex}"]`
   );
 
-  if (!slot) {
+  if (!slot) return;
+
+  const product = products[productIndex];
+  if (!product) return;
+
+  if (slot.dataset.hydrated === "true") {
+    updateCatalogCard(slot, product);
     return;
   }
 
-  const wasHydrated = slot.dataset.hydrated === "true";
-
-  slot.innerHTML = "";
-  delete slot.dataset.hydrated;
-
-  if (wasHydrated) {
-    hydrateCatalogSlot(slot);
-  }
+  hydrateCatalogSlot(slot);
 }
 
 async function patchLiveCatalogProduct(productId) {
@@ -2742,7 +2841,7 @@ function homeFeaturedProductCard(product) {
   const productUrl = `detalle.html?id=${encodeURIComponent(product.id)}`;
 
   return `
-    <article class="home-featured-card">
+    <article class="home-featured-card" data-home-product-id="${product.id}">
       <a class="home-featured-image" href="${productUrl}">
       <div class="product-media-frame">${productImageMarkup(product)}</div>
       </a>
@@ -2774,6 +2873,45 @@ function homeFeaturedProductCard(product) {
       </div>
     </article>
   `;
+}
+
+function updateHomeFeaturedProducts(featuredProducts) {
+  const holder = document.getElementById("homeFeaturedProducts");
+  if (!holder) return;
+
+  const currentCards = new Map(
+    [...holder.querySelectorAll("[data-home-product-id]")].map((card) => [
+      card.dataset.homeProductId,
+      card
+    ])
+  );
+
+  const nextIds = new Set(
+    featuredProducts.map((product) => String(product.id))
+  );
+
+  currentCards.forEach((card, productId) => {
+    if (!nextIds.has(productId)) {
+      card.remove();
+    }
+  });
+
+  featuredProducts.forEach((product) => {
+    const productId = String(product.id);
+    const currentCard = currentCards.get(productId);
+
+    const template = document.createElement("template");
+    template.innerHTML = homeFeaturedProductCard(product).trim();
+    const nextCard = template.content.firstElementChild;
+
+    if (!nextCard) return;
+
+    if (currentCard) {
+      currentCard.replaceWith(nextCard);
+    } else {
+      holder.appendChild(nextCard);
+    }
+  });
 }
 
 async function loadHomeFeaturedProducts({ keepVisible = false } = {}) {
@@ -2825,9 +2963,13 @@ async function loadHomeFeaturedProducts({ keepVisible = false } = {}) {
       return true;
     }
 
-    holder.innerHTML = featuredProducts
-      .map(homeFeaturedProductCard)
-      .join("");
+    if (keepVisible && holder.querySelector("[data-home-product-id]")) {
+      updateHomeFeaturedProducts(featuredProducts);
+    } else {
+      holder.innerHTML = featuredProducts
+        .map(homeFeaturedProductCard)
+        .join("");
+    }
     return true;
 
   } catch (error) {
