@@ -2167,26 +2167,67 @@ function renderFilters() {
   const categories = categoryList();
 
   if (categories.length <= 1) {
-    holder.innerHTML = "";
     holder.hidden = true;
+
+    holder.querySelectorAll("[data-category]").forEach((button) => {
+      button.remove();
+    });
+
     return;
   }
 
   holder.hidden = false;
 
-  holder.innerHTML = categories
-    .map(
-      (category) =>
-        `<button class="chip ${category === activeCategory ? "active" : ""}" type="button" data-category="${category}">${category}</button>`
-    )
-    .join("");
+  const categorySet = new Set(categories);
 
-  holder.querySelectorAll("[data-category]").forEach((button) => {
-    button.addEventListener("click", () => {
-      activeCategory = button.dataset.category;
-      renderFilters();
-      loadCatalogProducts({ reset: true });
-    });
+  const existingButtons = new Map(
+    [...holder.querySelectorAll("[data-category]")].map((button) => [
+      button.dataset.category,
+      button
+    ])
+  );
+
+  existingButtons.forEach((button, category) => {
+    if (!categorySet.has(category)) {
+      button.remove();
+    }
+  });
+
+  categories.forEach((category) => {
+    let button = existingButtons.get(category);
+
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "chip";
+      button.dataset.category = category;
+
+      button.addEventListener("click", () => {
+        const nextCategory = button.dataset.category;
+
+        if (!nextCategory || nextCategory === activeCategory) {
+          return;
+        }
+
+        activeCategory = nextCategory;
+
+        renderFilters();
+
+        void loadCatalogProducts({
+          reset: true,
+          keepVisible: true
+        });
+      });
+    }
+
+    button.textContent = category;
+    button.classList.toggle("active", category === activeCategory);
+    button.setAttribute(
+      "aria-pressed",
+      category === activeCategory ? "true" : "false"
+    );
+
+    holder.appendChild(button);
   });
 }
 
