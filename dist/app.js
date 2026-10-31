@@ -2193,7 +2193,7 @@ function renderFilters() {
     }
   });
 
-  categories.forEach((category) => {
+  categories.forEach((category, index) => {
     let button = existingButtons.get(category);
 
     if (!button) {
@@ -2220,14 +2220,29 @@ function renderFilters() {
       });
     }
 
-    button.textContent = category;
+    if (button.textContent !== category) {
+      button.textContent = category;
+    }
+
     button.classList.toggle("active", category === activeCategory);
+
     button.setAttribute(
       "aria-pressed",
       category === activeCategory ? "true" : "false"
     );
 
-    holder.appendChild(button);
+    const previousCategory = categories[index - 1];
+    const previousButton = previousCategory
+      ? existingButtons.get(previousCategory)
+      : null;
+
+    if (previousButton) {
+      if (previousButton.nextElementSibling !== button) {
+        previousButton.insertAdjacentElement("afterend", button);
+      }
+    } else if (holder.firstElementChild !== button) {
+      holder.prepend(button);
+    }
   });
 }
 
