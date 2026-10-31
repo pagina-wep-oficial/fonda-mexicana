@@ -2464,7 +2464,47 @@ function setupVirtualCatalog() {
   }
 }
 
-function renderCatalog() {
+function createCatalogSlot(index) {
+  const slot = document.createElement("div");
+
+  slot.className = "catalog-slot";
+  slot.dataset.catalogSlot = "";
+  slot.dataset.catalogIndex = String(index);
+  slot.setAttribute("aria-label", "Producto");
+
+  return slot;
+}
+
+function productDisplaySignature(product) {
+  const media = productPrimaryMedia(product);
+
+  return [
+    product.id,
+    product.name,
+    product.category,
+    product.description,
+    product.price,
+    product.compare_at_price,
+    product.unit_label,
+    product.featured,
+    product.enabled,
+    product.available_quantity,
+    product.inventory_enabled,
+    product.payment_methods?.join(","),
+    product.default_payment_method,
+    media.source_url,
+    media.fit_mode,
+    media.focal_x,
+    media.focal_y,
+    media.zoom,
+    media.rotation
+  ].join("|");
+}
+
+function renderCatalog({
+  previousProducts = [],
+  preserveVisible = false
+} = {}) {
   const grid = document.getElementById("productGrid");
   if (!grid) return;
 
@@ -2479,24 +2519,105 @@ function renderCatalog() {
     return;
   }
 
-  grid.innerHTML = products
-    .map(
-      (_, index) => `
-        <div
-          class="catalog-slot"
-          data-catalog-slot
-          data-catalog-index="${index}"
-          aria-label="Producto"
-        ></div>
-      `
-    )
-    .join("");
+  const existingSlots = [
+    ...grid.querySelectorAll("[data-catalog-slot]")
+  ];
 
-  if (catalogState.hasMore) {
-    grid.insertAdjacentHTML(
-      "beforeend",
-      `<div id="catalog-sentinel" class="catalog-sentinel">Cargando más productos...</div>`
-    );
+  const canReconcile =
+    preserveVisible &&
+    previousProducts.length > 0 &&
+    existingSlots.length > 0;
+
+  if (!canReconcile) {
+    grid.innerHTML = products
+      .map(
+        (_, index) => `
+          <div
+            class="catalog-slot"
+            data-catalog-slot
+            data-catalog-index="${index}"
+            aria-label="Producto"
+          ></div>
+        `
+      )
+      .join("");
+
+    if (catalogState.hasMore) {
+      grid.insertAdjacentHTML(
+        "beforeend",
+        `<div id="catalog-sentinel" class="catalog-sentinel">Cargando más productos...</div>`
+      );
+    }
+
+    setupVirtualCatalog();
+    return;
+  }
+
+  const previousByIndex = new Map(
+    previousProducts.map((product, index) => [index, product])
+  );
+
+  const slotsByProductId = new Map();
+
+  existingSlots.forEach((slot) => {
+    const oldIndex = Number(slot.dataset.catalogIndex);
+    const oldProduct = previousByIndex.get(oldIndex);
+
+    if (oldProduct?.id) {
+      slotsByProductId.set(String(oldProduct.id), slot);
+    }
+  });
+
+  const nextIds = new Set(products.map((product) => String(product.id)));
+
+  slotsByProductId.forEach((slot, productId) => {
+    if (!nextIds.has(productId)) {
+      slot.remove();
+    }
+  });
+
+  let sentinel = document.getElementById("catalog-sentinel");
+
+  products.forEach((product, nextIndex) => {
+    const productId = String(product.id);
+    let slot = slotsByProductId.get(productId);
+
+    if (!slot) {
+      slot = createCatalogSlot(nextIndex);
+    }
+
+    const oldIndex = Number(slot.dataset.catalogIndex);
+    const oldProduct = previousByIndex.get(oldIndex);
+
+    slot.dataset.catalogIndex = String(nextIndex);
+
+    if (sentinel) {
+      grid.insertBefore(slot, sentinel);
+    } else {
+      grid.appendChild(slot);
+    }
+
+    if (slot.dataset.hydrated === "true") {
+      if (
+        !oldProduct ||
+        productDisplaySignature(oldProduct) !==
+          productDisplaySignature(product)
+      ) {
+        updateCatalogCard(slot, product);
+      }
+    }
+  });
+
+  if (catalogState.hasMore && !sentinel) {
+    sentinel = document.createElement("div");
+    sentinel.id = "catalog-sentinel";
+    sentinel.className = "catalog-sentinel";
+    sentinel.textContent = "Cargando más productos...";
+    grid.appendChild(sentinel);
+  }
+
+  if (!catalogState.hasMore && sentinel) {
+    sentinel.remove();
   }
 
   setupVirtualCatalog();
@@ -2670,13 +2791,21 @@ async function loadCatalogProducts({ reset = true, productId = null, keepVisible
     return;
   }
 
+  const previousProducts = [...catalogState.items];
+  const preserveVisible = keepVisible || !reset;
+
   if (reset) {
     catalogRequestController?.abort();
-    catalogState.items = [];
+
+    if (!keepVisible) {
+      catalogState.items = [];
+    }
+
     catalogState.nextOffset = 0;
     catalogState.hasMore = true;
 
     const grid = document.getElementById("productGrid");
+
     if (grid && !keepVisible) {
       grid.innerHTML = `<div class="empty-state">Cargando productos...</div>`;
     }
@@ -2771,7 +2900,12 @@ async function loadCatalogProducts({ reset = true, productId = null, keepVisible
       body.pagination?.has_more === true;
 
     renderFilters();
-    renderCatalog();
+
+    renderCatalog({
+      previousProducts,
+      preserveVisible
+    });
+
     return true;
   } catch (error) {
     if (error?.name !== "AbortError") {
