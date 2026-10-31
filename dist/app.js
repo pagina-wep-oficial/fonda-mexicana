@@ -2622,8 +2622,9 @@ function renderCatalog({
   products.forEach((product, nextIndex) => {
     const productId = String(product.id);
     let slot = slotsByProductId.get(productId);
+    const isNewSlot = !slot;
 
-    if (!slot) {
+    if (isNewSlot) {
       slot = createCatalogSlot(nextIndex);
     }
 
@@ -2636,6 +2637,11 @@ function renderCatalog({
       grid.insertBefore(slot, sentinel);
     } else {
       grid.appendChild(slot);
+    }
+
+    if (isNewSlot) {
+      hydrateCatalogSlot(slot);
+      return;
     }
 
     if (slot.dataset.hydrated === "true") {
