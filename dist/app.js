@@ -2160,14 +2160,28 @@ function categoryList() {
   ];
 }
 
+function updateFilterSelection(holder) {
+  holder.querySelectorAll("[data-category]").forEach((button) => {
+    const isActive = button.dataset.category === activeCategory;
+
+    button.classList.toggle("active", isActive);
+    button.setAttribute(
+      "aria-pressed",
+      isActive ? "true" : "false"
+    );
+  });
+}
+
 function renderFilters() {
   const holder = document.getElementById("categoryFilters");
   if (!holder) return;
 
   const categories = categoryList();
+  const categorySignature = categories.join("\u001f");
 
   if (categories.length <= 1) {
     holder.hidden = true;
+    holder.dataset.categorySignature = "";
 
     holder.querySelectorAll("[data-category]").forEach((button) => {
       button.remove();
@@ -2177,6 +2191,16 @@ function renderFilters() {
   }
 
   holder.hidden = false;
+
+  /*
+   * Caso normal al pulsar Todos, Destacados o una categoría:
+   * los botones ya existen y las categorías no cambiaron.
+   * Solo cambia el estado activo; no se mueve ni recrea nada.
+   */
+  if (holder.dataset.categorySignature === categorySignature) {
+    updateFilterSelection(holder);
+    return;
+  }
 
   const categorySet = new Set(categories);
 
@@ -2190,6 +2214,7 @@ function renderFilters() {
   existingButtons.forEach((button, category) => {
     if (!categorySet.has(category)) {
       button.remove();
+      existingButtons.delete(category);
     }
   });
 
@@ -2201,6 +2226,7 @@ function renderFilters() {
       button.type = "button";
       button.className = "chip";
       button.dataset.category = category;
+      button.textContent = category;
 
       button.addEventListener("click", () => {
         const nextCategory = button.dataset.category;
@@ -2210,26 +2236,16 @@ function renderFilters() {
         }
 
         activeCategory = nextCategory;
-
-        renderFilters();
+        updateFilterSelection(holder);
 
         void loadCatalogProducts({
           reset: true,
           keepVisible: true
         });
       });
+
+      existingButtons.set(category, button);
     }
-
-    if (button.textContent !== category) {
-      button.textContent = category;
-    }
-
-    button.classList.toggle("active", category === activeCategory);
-
-    button.setAttribute(
-      "aria-pressed",
-      category === activeCategory ? "true" : "false"
-    );
 
     const previousCategory = categories[index - 1];
     const previousButton = previousCategory
@@ -2244,6 +2260,9 @@ function renderFilters() {
       holder.prepend(button);
     }
   });
+
+  holder.dataset.categorySignature = categorySignature;
+  updateFilterSelection(holder);
 }
 
 function renderProductPrice(product) {
