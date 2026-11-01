@@ -785,6 +785,12 @@ textarea:focus {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  min-height: 40px;
+  contain: layout paint;
+}
+
+.catalog-tools {
+  contain: layout paint;
 }
 
 .chip {
