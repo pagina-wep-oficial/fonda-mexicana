@@ -6,7 +6,7 @@
   <title>Mi perfil | Fonda Mexicana</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body data-page="perfil">
+<body data-page="perfil" data-catalog-state="pending">
   <header class="topbar">
     <a class="brand" href="index.html" aria-label="Inicio">
       <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="">
@@ -14,11 +14,11 @@
     </a>
 
     <nav class="nav" aria-label="Principal">
-      <a href="tienda.html">Hacer pedido</a>
-      <a class="cart-link" href="carrito.html">
+      <a href="tienda.html" data-commerce-only>Hacer pedido</a>
+      <a class="cart-link" href="carrito.html" data-commerce-only>
         Carrito <span data-cart-count>0</span>
       </a>
-      <a href="mis-pedidos.html">Mis pedidos</a>
+      <a href="mis-pedidos.html" data-commerce-only>Mis pedidos</a>
     </nav>
   </header>
 
@@ -31,7 +31,7 @@
     </div>
 
     <section class="panel customer-account" id="customer-account">
-      <h2>Datos para tus pedidos</h2>
+      <h2 data-profile-account-heading>Datos para tus pedidos</h2>
 
       <p class="muted" id="customer-account-status" hidden aria-live="polite"></p>
 
@@ -46,12 +46,12 @@
           <input id="customerPhone" type="tel">
         </label>
 
-        <label>
+        <label data-commerce-profile-field>
           <span>Dirección habitual</span>
           <textarea id="manualLocation" rows="3"></textarea>
         </label>
 
-        <label>
+        <label data-commerce-profile-field>
           <span>Referencia</span>
           <textarea id="customerReference" rows="2"></textarea>
         </label>
@@ -60,7 +60,7 @@
           <button class="button primary" id="save-customer-profile-btn" type="submit" hidden disabled>
             Guardar cambios
           </button>
-          <a class="button secondary" href="tienda.html">Ver catálogo</a>
+          <a class="button secondary" href="tienda.html" data-profile-catalog-link>Ver catálogo</a>
         </div>
       </form>
     </section>

@@ -9,20 +9,20 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="styles.css">
   </head>
-  <body data-page="carrito">
+  <body data-page="carrito" data-catalog-state="pending">
     <header class="topbar">
       <a class="brand" href="index.html" aria-label="Inicio">
         <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="" aria-hidden="true">
         <span>Fonda Mexicana</span>
       </a>
       <nav class="nav" aria-label="Principal">
-        <a href="tienda.html">Hacer pedido</a>
-        <a class="cart-link active" href="carrito.html">Carrito <span data-cart-count>0</span></a>
-        <a href="mis-pedidos.html">Mis pedidos</a>
+        <a href="tienda.html" data-commerce-only>Hacer pedido</a>
+        <a class="cart-link active" href="carrito.html" data-commerce-only>Carrito <span data-cart-count>0</span></a>
+        <a href="mis-pedidos.html" data-commerce-only>Mis pedidos</a>
       </nav>
     </header>
 
-    <main class="section">
+    <main class="section" data-commerce-route>
       <div class="page-title">
         <div>
           <p class="section-kicker">Tu orden</p>

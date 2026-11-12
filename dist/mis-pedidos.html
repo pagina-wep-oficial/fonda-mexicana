@@ -9,20 +9,20 @@
     <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   </head>
-  <body class="orders-page" data-page="mis-pedidos">
+  <body class="orders-page" data-page="mis-pedidos" data-catalog-state="pending">
     <header class="topbar">
       <a class="brand" href="index.html" aria-label="Inicio">
         <img class="brand-mark" src="assets/fonda-mexicana-logo.png" alt="" aria-hidden="true">
         <span>Fonda Mexicana</span>
       </a>
       <nav class="nav" aria-label="Principal">
-        <a href="tienda.html">Hacer pedido</a>
-        <a class="cart-link" href="carrito.html">Carrito <span data-cart-count>0</span></a>
-        <a class="active" href="mis-pedidos.html">Mis pedidos</a>
+        <a href="tienda.html" data-commerce-only>Hacer pedido</a>
+        <a class="cart-link" href="carrito.html" data-commerce-only>Carrito <span data-cart-count>0</span></a>
+        <a class="active" href="mis-pedidos.html" data-commerce-only>Mis pedidos</a>
       </nav>
     </header>
 
-    <main class="section">
+    <main class="section" data-commerce-route>
       <div class="orders-hero">
         <div>
           <p class="orders-eyebrow">TU CUENTA</p>

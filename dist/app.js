@@ -11,6 +11,20 @@ let homeFeaturedRefreshTimer = 0;
 let storeMode = "whatsapp_catalog";
 let enabledPaymentMethods = ["whatsapp"];
 let defaultPaymentMethod = "whatsapp";
+const PUBLIC_CATALOG_TYPES = new Set([
+  "commerce",
+  "external_catalog"
+]);
+
+let activeCatalogType = "";
+let externalCatalogSettings = {
+  ctaLabel: "Ver oferta",
+  disclosureText: "Este producto se consigue en un sitio externo.",
+  contactPhone: "",
+  showContactPhone: false
+};
+let catalogContextReady = false;
+let catalogRouteRedirecting = false;
 const GENERIC_IMAGE = "assets/producto-generico.svg";
 const CART_KEY = "tiendaPedidosCarrito";
 const HISTORY_KEY = "tiendaPedidosHistorial";
@@ -82,30 +96,186 @@ async function fetchCatalogResponse(url, { signal } = {}) {
   throw lastError || new Error("CATALOG_UNAVAILABLE");
 }
 
+function readExternalCatalogText(
+  settings,
+  camelCaseKey,
+  snakeCaseKey,
+  fallback,
+  maxLength
+) {
+  const external = settings?.external_catalog || {};
+  const value = String(
+    external[camelCaseKey] ??
+    external[snakeCaseKey] ??
+    ""
+  ).trim();
+
+  return value.slice(0, maxLength) || fallback;
+}
+
+function normalizeExternalCatalogSettings(settings = {}) {
+  const external = settings?.external_catalog || {};
+
+  return {
+    ctaLabel: readExternalCatalogText(
+      settings,
+      "ctaLabel",
+      "cta_label",
+      "Ver oferta",
+      80
+    ),
+    disclosureText: readExternalCatalogText(
+      settings,
+      "disclosureText",
+      "disclosure_text",
+      "Este producto se consigue en un sitio externo.",
+      500
+    ),
+    contactPhone: String(
+      external.contactPhone ??
+      external.contact_phone ??
+      ""
+    ).trim().slice(0, 40),
+    showContactPhone:
+      external.showContactPhone === true ||
+      external.show_contact_phone === true
+  };
+}
+
+function isExternalCatalog() {
+  return activeCatalogType === "external_catalog";
+}
+
+function syncPublicCatalogInterface() {
+  document.body.dataset.catalogType = activeCatalogType;
+  document.body.dataset.catalogState = "ready";
+
+  document
+    .querySelectorAll("[data-catalog-primary-link]")
+    .forEach((link) => {
+      link.href = "tienda.html";
+      link.textContent = isExternalCatalog()
+        ? "Ver ofertas"
+        : "Hacer pedido";
+    });
+
+  const catalogKicker = isExternalCatalog()
+    ? "Ofertas disponibles"
+    : "Pedidos en línea";
+
+  const catalogTitle = isExternalCatalog()
+    ? "Explora las ofertas"
+    : "Elige tu pedido";
+
+  document
+    .querySelectorAll("[data-catalog-page-kicker]")
+    .forEach((element) => {
+      element.textContent = catalogKicker;
+    });
+
+  document
+    .querySelectorAll("[data-catalog-page-title]")
+    .forEach((element) => {
+      element.textContent = catalogTitle;
+    });
+
+  if (document.body.dataset.page === "tienda") {
+    document.title = isExternalCatalog()
+      ? "Ofertas disponibles | Fonda Mexicana"
+      : "Hacer pedido | Fonda Mexicana";
+  }
+
+  document
+    .querySelectorAll("[data-catalog-back-link]")
+    .forEach((link) => {
+      link.textContent = isExternalCatalog()
+        ? "Volver a ofertas"
+        : "Volver a tienda";
+    });
+
+  syncCustomerProfileCatalogFields();
+}
+
+function showCatalogContextUnavailable() {
+  document.body.dataset.catalogState = "error";
+
+  if (document.querySelector("[data-catalog-context-error]")) {
+    return;
+  }
+
+  document.body.insertAdjacentHTML(
+    "afterbegin",
+    `<section class="catalog-context-error" data-catalog-context-error role="alert">
+      <strong>No pudimos cargar esta tienda.</strong>
+      <span>Verifica tu conexión e inténtalo nuevamente.</span>
+      <button class="button secondary" type="button" data-retry-catalog-context>
+        Reintentar
+      </button>
+    </section>`
+  );
+
+  document
+    .querySelector("[data-retry-catalog-context]")
+    ?.addEventListener("click", () => window.location.reload());
+}
+
 function applyStorePaymentSettings(settings = {}) {
-  storeMode =
-    settings.store_mode === "managed_orders"
-      ? "managed_orders"
-      : "whatsapp_catalog";
+  const nextCatalogType = String(
+    settings.active_catalog_type || ""
+  ).trim();
 
-  const configuredMethods = Array.isArray(settings.enabled_payment_methods)
-    ? settings.enabled_payment_methods.filter(
-        (method) => method === "whatsapp" || method === "code"
-      )
-    : [];
+  if (!PUBLIC_CATALOG_TYPES.has(nextCatalogType)) {
+    throw new Error("STORE_CATALOG_TYPE_INVALID");
+  }
 
-  enabledPaymentMethods =
-    storeMode === "whatsapp_catalog"
-      ? ["whatsapp"]
-      : configuredMethods.length
-        ? [...new Set(configuredMethods)]
-        : ["whatsapp"];
+  const previousCatalogType = activeCatalogType;
 
-  defaultPaymentMethod = enabledPaymentMethods.includes(
-    settings.default_payment_method
-  )
-    ? settings.default_payment_method
-    : enabledPaymentMethods[0];
+  activeCatalogType = nextCatalogType;
+  externalCatalogSettings = normalizeExternalCatalogSettings(settings);
+
+  if (isExternalCatalog()) {
+    storeMode = "external_catalog";
+    enabledPaymentMethods = [];
+    defaultPaymentMethod = "";
+  } else {
+    storeMode =
+      settings.store_mode === "managed_orders"
+        ? "managed_orders"
+        : "whatsapp_catalog";
+
+    const configuredMethods = Array.isArray(
+      settings.enabled_payment_methods
+    )
+      ? settings.enabled_payment_methods.filter(
+          (method) => method === "whatsapp" || method === "code"
+        )
+      : [];
+
+    enabledPaymentMethods =
+      storeMode === "whatsapp_catalog"
+        ? ["whatsapp"]
+        : configuredMethods.length
+          ? [...new Set(configuredMethods)]
+          : ["whatsapp"];
+
+    defaultPaymentMethod = enabledPaymentMethods.includes(
+      settings.default_payment_method
+    )
+      ? settings.default_payment_method
+      : enabledPaymentMethods[0];
+  }
+
+  syncPublicCatalogInterface();
+
+  if (
+    catalogContextReady &&
+    previousCatalogType &&
+    previousCatalogType !== activeCatalogType &&
+    !catalogRouteRedirecting
+  ) {
+    catalogRouteRedirecting = true;
+    window.location.reload();
+  }
 }
 function applyStorePickupSettings(pickup = {}) {
   const name = String(pickup.name || '').trim();
@@ -219,7 +389,10 @@ async function refreshStoreSettingsFromServer() {
 
     applyStorePaymentSettings(body.settings || {});
 
-    if (document.body.dataset.page === "carrito") {
+    if (
+      document.body.dataset.page === "carrito" &&
+      !isExternalCatalog()
+    ) {
       renderCart();
     }
 
@@ -775,11 +948,33 @@ let selectedMapCoords = null;
 let calendarCursorDate = new Date();
 let selectedReportDate = localDateKey(new Date());
 
-function money(value) {
-  return value.toLocaleString("es-MX", {
-    style: "currency",
-    currency: "MXN"
-  });
+function productCurrency(value) {
+  const currency = String(value || "MXN")
+    .trim()
+    .toUpperCase();
+
+  return /^[A-Z]{3}$/.test(currency)
+    ? currency
+    : "MXN";
+}
+
+function money(value, currency = "MXN") {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "";
+  }
+
+  const code = productCurrency(currency);
+
+  try {
+    return amount.toLocaleString("es-MX", {
+      style: "currency",
+      currency: code
+    });
+  } catch {
+    return `${amount.toLocaleString("es-MX")} ${code}`;
+  }
 }
 
 function localDateKey(date) {
@@ -936,7 +1131,7 @@ function saveCatalogViewState() {
   });
 
   writeSessionJson(CATALOG_CACHE_KEY, {
-    version: 1,
+    version: 2,
     saved_at: Date.now(),
     category: activeCategory,
     query: catalogState.query,
@@ -974,12 +1169,23 @@ function getCatalogViewState() {
 function getCatalogCache(saved) {
   const cached = readSessionJson(CATALOG_CACHE_KEY, null);
 
+  const cachedCatalogType = String(
+    cached?.settings?.active_catalog_type || ""
+  ).trim();
+
   if (
     !cached ||
-    cached.version !== 1 ||
-    Date.now() - Number(cached.saved_at || 0) > CATALOG_CACHE_MAX_AGE_MS ||
-    String(cached.category || "Todos") !== String(saved?.category || "Todos") ||
-    String(cached.query || "") !== String(saved?.query || "") ||
+    cached.version !== 2 ||
+    !cached.settings ||
+    typeof cached.settings !== "object" ||
+    !PUBLIC_CATALOG_TYPES.has(cachedCatalogType) ||
+    cachedCatalogType !== activeCatalogType ||
+    Date.now() - Number(cached.saved_at || 0) >
+      CATALOG_CACHE_MAX_AGE_MS ||
+    String(cached.category || "Todos") !==
+      String(saved?.category || "Todos") ||
+    String(cached.query || "") !==
+      String(saved?.query || "") ||
     !Array.isArray(cached.items) ||
     !cached.items.length
   ) {
@@ -995,10 +1201,7 @@ function getCatalogCache(saved) {
       ? cached.next_offset
       : null,
     hasMore: cached.has_more === true,
-    settings:
-      cached.settings && typeof cached.settings === "object"
-        ? cached.settings
-        : {}
+    settings: cached.settings
   };
 }
 
@@ -1833,20 +2036,30 @@ const loggedIn=Boolean(
       : "";
   }
 
-  if(message){
-    message.textContent=loggedIn
-      ? "Administra tus datos y consulta tus pedidos."
+  const external = isExternalCatalog();
+
+  if (message) {
+    message.textContent = loggedIn
+      ? external
+        ? "Administra tu nombre y tu WhatsApp."
+        : "Administra tus datos y consulta tus pedidos."
       : profileActionIntent === "comment"
-        ? "Inicia sesión para comentar y facilitar tus pedidos."
+        ? external
+          ? "Inicia sesión para comentar."
+          : "Inicia sesión para comentar y facilitar tus pedidos."
         : profileActionIntent === "rating"
-          ? "Inicia sesión para calificar y facilitar tus pedidos."
-          : "Inicia sesión para guardar tus datos y facilitar tus pedidos.";
+          ? external
+            ? "Inicia sesión para calificar."
+            : "Inicia sesión para calificar y facilitar tus pedidos."
+          : external
+            ? "Inicia sesión para guardar tu nombre y WhatsApp."
+            : "Inicia sesión para guardar tus datos y facilitar tus pedidos.";
   }
 
-  if(loginButton)loginButton.hidden=loggedIn;
-  if(profileLink)profileLink.hidden=!loggedIn;
-  if(ordersLink)ordersLink.hidden=!loggedIn;
-  if(logoutButton)logoutButton.hidden=!loggedIn;
+  if (loginButton) loginButton.hidden = loggedIn;
+  if (profileLink) profileLink.hidden = !loggedIn;
+  if (ordersLink) ordersLink.hidden = !loggedIn || external;
+  if (logoutButton) logoutButton.hidden = !loggedIn;
 }
 
 async function loadProfileIdentity({ force = false } = {}){
@@ -1935,7 +2148,7 @@ function initProfileMenu(){
             Configurar perfil
           </a>
 
-          <a class="button secondary" href="mis-pedidos.html" data-profile-orders hidden>
+          <a class="button secondary" href="mis-pedidos.html" data-profile-orders data-commerce-only hidden>
             Mis pedidos
           </a>
 
@@ -2011,10 +2224,13 @@ button.addEventListener("click",async()=>{
 }
 
 function initAppNavigation() {
-  if (document.querySelector(".app-nav")) return;
+  document.querySelector(".app-nav")?.remove();
 
   const page = document.body.dataset.page;
-  if (!page || INTERNAL_PAGES.includes(page)) return;
+
+  if (!page || INTERNAL_PAGES.includes(page)) {
+    return;
+  }
 
   const topbar = document.querySelector(".topbar");
 
@@ -2034,20 +2250,48 @@ function initAppNavigation() {
     return;
   }
 
-  const activePage =
-    page === "carrito" || page === "mis-pedidos"
+  const external = isExternalCatalog();
+
+  const activePage = external
+    ? "tienda"
+    : page === "carrito" || page === "mis-pedidos"
       ? page
       : "tienda";
 
-  const links = [
-    { id: "tienda", label: "Pedir", href: "tienda.html", icon: "tienda" },
-    { id: "carrito", label: "Carrito", href: "carrito.html", icon: "carrito", badge: true },
-    { id: "mis-pedidos", label: "Mis pedidos", href: "mis-pedidos.html", icon: "pedidos" }
-  ];
+  const links = external
+    ? [
+        {
+          id: "tienda",
+          label: "Ofertas",
+          href: "tienda.html",
+          icon: "tienda"
+        }
+      ]
+    : [
+        {
+          id: "tienda",
+          label: "Pedir",
+          href: "tienda.html",
+          icon: "tienda"
+        },
+        {
+          id: "carrito",
+          label: "Carrito",
+          href: "carrito.html",
+          icon: "carrito",
+          badge: true
+        },
+        {
+          id: "mis-pedidos",
+          label: "Mis pedidos",
+          href: "mis-pedidos.html",
+          icon: "pedidos"
+        }
+      ];
 
   document.body.insertAdjacentHTML(
     "beforeend",
-    `<nav class="app-nav" aria-label="Navegacion principal">
+    `<nav class="app-nav" aria-label="Navegación principal">
       ${links.map((link) => `
         <a class="${activePage === link.id ? "active" : ""}" href="${link.href}" aria-label="${link.label}">
           <span class="app-nav-icon">${appNavIcon(link.icon)}${link.badge ? '<span class="app-nav-badge" data-cart-count>0</span>' : ""}</span>
@@ -2266,19 +2510,35 @@ function renderFilters() {
 }
 
 function renderProductPrice(product) {
-  const currentPrice = Number(product.price) || 0;
-  const previousPrice = Number(product.compare_at_price) || 0;
+  if (
+    isExternalCatalog() &&
+    product.external_price_visible === false
+  ) {
+    return "";
+  }
 
-  if (previousPrice > currentPrice) {
+  const currentPrice = Number(product.price);
+  const previousPrice = Number(product.compare_at_price);
+
+  if (!Number.isFinite(currentPrice)) {
+    return "";
+  }
+
+  const currency = productCurrency(product.currency);
+
+  if (
+    Number.isFinite(previousPrice) &&
+    previousPrice > currentPrice
+  ) {
     return `
       <span class="price">
-        <del>${money(previousPrice)}</del>
-        ${money(currentPrice)}
+        <del>${money(previousPrice, currency)}</del>
+        ${money(currentPrice, currency)}
       </span>
     `;
   }
 
-  return `<span class="price">${money(currentPrice)}</span>`;
+  return `<span class="price">${money(currentPrice, currency)}</span>`;
 }
 
 function productUnitText(product) {
@@ -2301,24 +2561,39 @@ function productPaymentLabel(product) {
 }
 
 function productCard(product) {
+  const external = isExternalCatalog();
   const outOfStock =
+    !external &&
     usesInventoryControl(product) &&
     product.available_quantity <= 0;
 
-  const stockLabel = usesInventoryControl(product)
-    ? outOfStock
-      ? "Agotado"
-      : `Disponibles: ${product.available_quantity}`
-    : "";
+  const stockLabel =
+    !external && usesInventoryControl(product)
+      ? outOfStock
+        ? "Agotado"
+        : `Disponibles: ${product.available_quantity}`
+      : "";
 
   const featuredLabel = product.featured
     ? `<span class="category">★ Destacado</span>`
     : "";
 
-  const payment = productPaymentLabel(product);
+  const payment = external
+    ? null
+    : productPaymentLabel(product);
+
+  const productId = encodeURIComponent(product.id);
+  const priceMarkup = renderProductPrice(product);
+  const unitMarkup =
+    !external && productUnitText(product)
+      ? `<small class="product-unit">${escapeHtml(productUnitText(product))}</small>`
+      : "";
 
   return `
-    <article class="product-card" data-product-id="${product.id}">
+    <article
+      class="product-card${external ? " product-card-external" : ""}"
+      data-product-id="${escapeHtml(product.id)}"
+    >
       <div data-product-field="media">
         ${productImageMarkup(product)}
       </div>
@@ -2328,56 +2603,66 @@ function productCard(product) {
           <span class="category" data-product-field="category">${
             String(product.category || "").toLowerCase() === "destacados"
               ? "Destacados"
-              : product.category
+              : escapeHtml(product.category)
           }</span>
 
-          <span data-product-field="price">
-            ${renderProductPrice(product)}
-          </span>
+          <span data-product-field="price">${priceMarkup}</span>
 
-          <span data-product-field="unit">
-            ${
-              productUnitText(product)
-                ? `<small class="product-unit">${productUnitText(product)}</small>`
-                : ""
-            }
-          </span>
+          <span data-product-field="unit">${unitMarkup}</span>
         </div>
 
         <div data-product-field="featured">${featuredLabel}</div>
 
-        <h2 data-product-field="name">${product.name}</h2>
-        <p data-product-field="description">${product.description}</p>
+        <h2 data-product-field="name">${escapeHtml(product.name)}</h2>
+        <p data-product-field="description">${escapeHtml(product.description)}</p>
 
         <div data-product-field="stock">
-          ${stockLabel ? `<p class="product-stock">${stockLabel}</p>` : ""}
+          ${
+            stockLabel
+              ? `<p class="product-stock">${escapeHtml(stockLabel)}</p>`
+              : ""
+          }
         </div>
 
-        <p
-          class="product-payment-method"
-          data-product-field="payment"
-          data-payment-method="${payment.id}"
-        >
-          ${payment.label}
-        </p>
+        ${
+          payment
+            ? `<p
+                class="product-payment-method"
+                data-product-field="payment"
+                data-payment-method="${payment.id}"
+              >
+                ${payment.label}
+              </p>`
+            : `<span data-product-field="payment" hidden></span>`
+        }
 
         <div class="product-actions">
-          <button
-            class="button primary"
-            type="button"
-            data-add="${product.id}"
-            ${outOfStock ? "disabled aria-disabled=\"true\"" : ""}
-          >
-            ${outOfStock ? "Agotado" : "Agregar"}
-          </button>
+          ${
+            external
+              ? `<a
+                  class="button primary"
+                  data-product-detail-link
+                  href="detalle.html?id=${productId}"
+                >
+                  Ver producto
+                </a>`
+              : `<button
+                  class="button primary"
+                  type="button"
+                  data-add="${escapeHtml(product.id)}"
+                  ${outOfStock ? "disabled aria-disabled=\"true\"" : ""}
+                >
+                  ${outOfStock ? "Agotado" : "Agregar"}
+                </button>
 
-          <a
-            class="button secondary"
-            data-product-detail-link
-            href="detalle.html?id=${product.id}"
-          >
-            Ver detalles
-          </a>
+                <a
+                  class="button secondary"
+                  data-product-detail-link
+                  href="detalle.html?id=${productId}"
+                >
+                  Ver detalles
+                </a>`
+          }
         </div>
       </div>
     </article>
@@ -2560,6 +2845,9 @@ function productDisplaySignature(product) {
     product.description,
     product.price,
     product.compare_at_price,
+    product.currency,
+    product.external_url,
+    product.external_price_visible,
     product.unit_label,
     product.featured,
     product.enabled,
@@ -2718,8 +3006,15 @@ function mapPublicCatalogProduct(product) {
     name: String(product.name || "Producto"),
     category: String(product.category || "Otros"),
     featured: product.featured === true,
-    price: Number(product.price) || 0,
-    compare_at_price: Number(product.compare_at_price) || 0,
+    price: Number.isFinite(Number(product.price))
+      ? Number(product.price)
+      : null,
+    compare_at_price: Number.isFinite(Number(product.compare_at_price))
+      ? Number(product.compare_at_price)
+      : null,
+    currency: productCurrency(product.currency),
+    external_url: String(product.external_url || "").trim(),
+    external_price_visible: product.external_price_visible !== false,
     unit_label: String(product.unit_label || "").trim(),
     description: String(product.description || ""),
     image_url: String(product.image_url || media[0]?.source_url || ""),
@@ -3050,15 +3345,22 @@ async function initCatalog() {
 }
 
 function homeFeaturedProductCard(product) {
+  const external = isExternalCatalog();
   const productName = escapeHtml(product.name);
   const productCategory = escapeHtml(product.category || "Producto");
   const productDescription = escapeHtml(product.description || "");
   const productUrl = `detalle.html?id=${encodeURIComponent(product.id)}`;
+  const priceMarkup = renderProductPrice(product);
+
+  const unitMarkup =
+    !external && productUnitText(product)
+      ? `<small>${escapeHtml(productUnitText(product))}</small>`
+      : "";
 
   return `
-    <article class="home-featured-card" data-home-product-id="${product.id}">
+    <article class="home-featured-card" data-home-product-id="${escapeHtml(product.id)}">
       <a class="home-featured-image" href="${productUrl}">
-      <div class="product-media-frame">${productImageMarkup(product)}</div>
+        <div class="product-media-frame">${productImageMarkup(product)}</div>
       </a>
 
       <div class="home-featured-body">
@@ -3073,12 +3375,8 @@ function homeFeaturedProductCard(product) {
 
         <div class="home-featured-bottom">
           <div>
-            ${renderProductPrice(product)}
-            ${
-              productUnitText(product)
-                ? `<small>${escapeHtml(productUnitText(product))}</small>`
-                : ""
-            }
+            ${priceMarkup}
+            ${unitMarkup}
           </div>
 
           <a class="button primary small" href="${productUrl}">
@@ -3654,6 +3952,140 @@ function initOpinions() {
   }
 }
 
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+function externalCatalogContactMarkup() {
+  if (
+    !externalCatalogSettings.showContactPhone ||
+    !externalCatalogSettings.contactPhone
+  ) {
+    return "";
+  }
+
+  const phone = String(externalCatalogSettings.contactPhone).trim();
+  const dialable = phone.replace(/\D/g, "");
+
+  if (dialable.length < 8 || dialable.length > 15) {
+    return "";
+  }
+
+  return `
+    <p class="external-offer-contact">
+      ¿Necesitas ayuda?
+      <a href="tel:+${dialable}">
+        ${escapeHtml(phone)}
+      </a>
+    </p>
+  `;
+}
+
+function bindDetailMediaControls(holder, detailMedia, product) {
+  holder.querySelectorAll("[data-detail-media]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const media = detailMedia[Number(button.dataset.detailMedia)];
+      const frame = holder.querySelector(".detail-media");
+
+      if (!media || !frame) {
+        return;
+      }
+
+      frame.innerHTML = detailMediaMarkup(media, product);
+
+      holder
+        .querySelectorAll("[data-detail-media]")
+        .forEach((item) => {
+          item.classList.toggle("active", item === button);
+        });
+    });
+  });
+}
+
+function renderExternalProductDetail(holder, product) {
+  const detailMedia = productDetailMedia(product);
+  const selectedDetailMedia = detailMedia[0];
+  const externalUrl = safeExternalUrl(product.external_url);
+  const disclosure = escapeHtml(
+    externalCatalogSettings.disclosureText
+  );
+  const ctaLabel = escapeHtml(
+    externalCatalogSettings.ctaLabel
+  );
+  const priceMarkup = renderProductPrice(product);
+
+  const actionMarkup = externalUrl
+    ? `<a
+        class="button primary external-offer-cta"
+        href="${escapeHtml(externalUrl)}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        ${ctaLabel} ↗
+      </a>`
+    : `<p class="external-offer-unavailable" role="status">
+        El enlace para esta oferta no está disponible por ahora.
+      </p>`;
+
+  holder.innerHTML = `
+    <div class="detail-gallery" data-detail-gallery>
+      <div class="detail-media">
+        ${detailMediaMarkup(selectedDetailMedia, product)}
+      </div>
+      ${
+        detailMedia.length > 1
+          ? `<div class="detail-thumbnails">${
+              detailMedia
+                .map((media, index) =>
+                  detailThumbnailMarkup(
+                    media,
+                    product,
+                    index,
+                    index === 0
+                  )
+                )
+                .join("")
+            }</div>`
+          : ""
+      }
+    </div>
+
+    <div class="detail-copy detail-copy-external">
+      <p class="section-kicker">Oferta disponible</p>
+      <h1>${escapeHtml(product.name)}</h1>
+
+      ${
+        product.description
+          ? `<p>${escapeHtml(product.description)}</p>`
+          : ""
+      }
+
+      ${priceMarkup}
+
+      <p class="external-offer-disclosure">
+        <strong>Antes de continuar:</strong>
+        ${disclosure}
+      </p>
+
+      ${externalCatalogContactMarkup()}
+
+      <div class="detail-actions external-offer-actions">
+        ${actionMarkup}
+      </div>
+    </div>
+  `;
+
+  bindDetailMediaControls(holder, detailMedia, product);
+}
+
 async function initDetail({ preferredQuantity = null } = {}) {
   const holder = document.getElementById("detailView");
   if (!holder) return;
@@ -3692,6 +4124,11 @@ async function initDetail({ preferredQuantity = null } = {}) {
   }
 
   document.title = `${product.name} | Fonda Mexicana`;
+
+  if (isExternalCatalog()) {
+    renderExternalProductDetail(holder, product);
+    return;
+  }
 
   const detailOutOfStock =
     usesInventoryControl(product) &&
@@ -3783,15 +4220,7 @@ async function initDetail({ preferredQuantity = null } = {}) {
     </div>
   `;
 
-  holder.querySelectorAll("[data-detail-media]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const media = detailMedia[Number(button.dataset.detailMedia)];
-      const frame = holder.querySelector(".detail-media");
-      if (!media || !frame) return;
-      frame.innerHTML = detailMediaMarkup(media, product);
-      holder.querySelectorAll("[data-detail-media]").forEach((item) => item.classList.toggle("active", item === button));
-    });
-  });
+  bindDetailMediaControls(holder, detailMedia, product);
 
   const quantityInput = holder.querySelector("#detailQuantity");
 
@@ -4443,6 +4872,40 @@ async function ensureCustomerAuth() {
   return window.ITMFirebase;
 }
 
+function syncCustomerProfileCatalogFields() {
+  const external = isExternalCatalog();
+
+  document
+    .querySelectorAll("[data-commerce-profile-field]")
+    .forEach((field) => {
+      field.hidden = external;
+
+      field
+        .querySelectorAll("input, textarea")
+        .forEach((control) => {
+          control.disabled = external;
+        });
+    });
+
+  const heading = document.querySelector(
+    "[data-profile-account-heading]"
+  );
+
+  if (heading) {
+    heading.textContent = external
+      ? "Datos de tu cuenta"
+      : "Datos para tus pedidos";
+  }
+
+  document
+    .querySelectorAll("[data-profile-catalog-link]")
+    .forEach((link) => {
+      link.textContent = external
+        ? "Ver ofertas"
+        : "Ver catálogo";
+    });
+}
+
 function renderCustomerAuth() {
   const status = document.getElementById("customer-account-status");
   const loginButton = document.getElementById("customer-login-btn");
@@ -4462,6 +4925,7 @@ function renderCustomerAuth() {
   }
 
   renderProfileMenu();
+  syncCustomerProfileCatalogFields();
 
   if (!status) return;
 
@@ -4472,7 +4936,9 @@ function renderCustomerAuth() {
 
   if (customerProfile) {
     status.hidden = false;
-    status.textContent = "✓ Tus datos están guardados para tus próximos pedidos.";
+    status.textContent = isExternalCatalog()
+      ? "✓ Tus datos están guardados."
+      : "✓ Tus datos están guardados para tus próximos pedidos.";
   } else {
     status.hidden = true;
   }
@@ -4481,11 +4947,19 @@ function renderCustomerAuth() {
 }
 
 function customerProfileFormSignature() {
+  const external = isExternalCatalog();
+
   return JSON.stringify({
-    display_name: document.getElementById("customerName")?.value.trim() || "",
-    phone: document.getElementById("customerPhone")?.value.trim() || "",
-    address: document.getElementById("manualLocation")?.value.trim() || "",
-    reference: document.getElementById("customerReference")?.value.trim() || ""
+    display_name:
+      document.getElementById("customerName")?.value.trim() || "",
+    phone:
+      document.getElementById("customerPhone")?.value.trim() || "",
+    address: external
+      ? String(customerProfile?.address || "")
+      : document.getElementById("manualLocation")?.value.trim() || "",
+    reference: external
+      ? String(customerProfile?.reference || "")
+      : document.getElementById("customerReference")?.value.trim() || ""
   });
 }
 
@@ -4612,6 +5086,16 @@ async function saveCustomerProfile() {
 
   const displayName = nameInput?.value.trim() || "";
 
+  const external = isExternalCatalog();
+
+  const preservedAddress = external
+    ? String(customerProfile?.address || "")
+    : addressInput?.value.trim() || "";
+
+  const preservedReference = external
+    ? String(customerProfile?.reference || "")
+    : referenceInput?.value.trim() || "";
+
   if (!displayName) {
     if (status) status.textContent = "Escribe tu nombre.";
     return;
@@ -4630,8 +5114,8 @@ async function saveCustomerProfile() {
       body: JSON.stringify({
         display_name: displayName,
         phone: phoneInput?.value.trim() || "",
-        address: addressInput?.value.trim() || "",
-        reference: referenceInput?.value.trim() || ""
+        address: preservedAddress,
+        reference: preservedReference
       })
     });
 
@@ -6290,14 +6774,72 @@ function renderLocalPanel() {
   bindPanelControls();
 }
 
-const page = document.body.dataset.page;
-initAppNavigation();
-updateCartCount();
-if (page === "inicio") initHome();
-if (page === "inicio") initOpinions();
-if (page === "tienda") initCatalog();
-if (page === "detalle") initDetail();
-if (page === "carrito") initCart();
-if (page === "mis-pedidos") initHistory();
-if (page === "panel-local") initLocalPanel();
-if (page === "perfil") initCustomerProfilePage();
+async function bootstrapPublicStore() {
+  const page = document.body.dataset.page;
+
+  if (!page) {
+    return;
+  }
+
+  if (page === "panel-local") {
+    initAppNavigation();
+    updateCartCount();
+    initLocalPanel();
+    return;
+  }
+
+  document.body.dataset.catalogState = "pending";
+
+  const settings = await refreshStoreSettingsFromServer();
+
+  if (!settings || !PUBLIC_CATALOG_TYPES.has(activeCatalogType)) {
+    showCatalogContextUnavailable();
+    return;
+  }
+
+  catalogContextReady = true;
+
+  if (
+    isExternalCatalog() &&
+    (page === "carrito" || page === "mis-pedidos")
+  ) {
+    catalogRouteRedirecting = true;
+    window.location.replace(
+      "tienda.html?catalog_notice=external_catalog"
+    );
+    return;
+  }
+
+  initAppNavigation();
+
+  if (!isExternalCatalog()) {
+    updateCartCount();
+  }
+
+  if (page === "inicio") initHome();
+  if (page === "inicio") initOpinions();
+  if (page === "tienda") initCatalog();
+  if (page === "detalle") initDetail();
+  if (page === "carrito") initCart();
+  if (page === "mis-pedidos") initHistory();
+  if (page === "perfil") initCustomerProfilePage();
+
+  const query = new URLSearchParams(window.location.search);
+
+  if (
+    page === "tienda" &&
+    query.get("catalog_notice") === "external_catalog"
+  ) {
+    showToast("Esta tienda muestra ofertas externas; no usa carrito ni pedidos.");
+    query.delete("catalog_notice");
+
+    const nextQuery = query.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`
+    );
+  }
+}
+
+void bootstrapPublicStore();

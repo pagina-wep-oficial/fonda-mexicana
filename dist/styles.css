@@ -4033,3 +4033,100 @@ textarea:focus {
     height: 220px;
   }
 }
+
+body[data-catalog-state="pending"] .app-nav,
+body[data-catalog-state="error"] .app-nav,
+body[data-catalog-state="pending"] [data-commerce-only],
+body[data-catalog-state="error"] [data-commerce-only],
+body[data-catalog-type="external_catalog"] [data-commerce-only],
+body[data-catalog-state="pending"] [data-commerce-route],
+body[data-catalog-state="error"] [data-commerce-route],
+body[data-catalog-type="external_catalog"] [data-commerce-route] {
+  display: none !important;
+}
+
+body[data-catalog-state="pending"] [data-catalog-primary-link],
+body[data-catalog-state="error"] [data-catalog-primary-link] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body[data-catalog-type="external_catalog"] .app-nav {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 260px;
+}
+
+.catalog-context-error {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  max-width: 720px;
+  margin: 28px auto;
+  padding: 18px;
+  color: #4b1f1b;
+  background: #fff6e9;
+  border: 1px solid rgba(119, 43, 36, 0.28);
+  border-radius: 16px;
+  box-shadow: 0 14px 32px rgba(36, 28, 25, 0.12);
+}
+
+.product-card-external .product-actions {
+  margin-top: auto;
+}
+
+.product-card-external .product-actions .button {
+  width: 100%;
+}
+
+.detail-copy-external {
+  align-content: start;
+}
+
+.external-offer-disclosure {
+  margin: 0;
+  padding: 14px 16px;
+  color: #4b372b;
+  background: #fff6e9;
+  border: 1px solid rgba(180, 119, 41, 0.28);
+  border-radius: 12px;
+  line-height: 1.55;
+}
+
+.external-offer-disclosure strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.external-offer-contact {
+  margin: 0;
+  color: var(--muted);
+}
+
+.external-offer-contact a {
+  font-weight: 800;
+}
+
+.external-offer-actions {
+  margin-top: 4px;
+}
+
+.external-offer-cta {
+  min-width: min(100%, 280px);
+  justify-content: center;
+}
+
+.external-offer-unavailable {
+  margin: 0;
+  padding: 12px 14px;
+  color: #6f3329;
+  background: #fff1ef;
+  border: 1px solid rgba(150, 51, 41, 0.24);
+  border-radius: 12px;
+}
+
+body[data-catalog-state="pending"] [data-commerce-profile-field],
+body[data-catalog-state="error"] [data-commerce-profile-field],
+body[data-catalog-type="external_catalog"] [data-commerce-profile-field] {
+  display: none !important;
+}
