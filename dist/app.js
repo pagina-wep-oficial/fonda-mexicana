@@ -958,11 +958,20 @@ function productCurrency(value) {
     : "MXN";
 }
 
-function money(value, currency = "MXN") {
+function money(value, currency = "MXN", displayLabel = "") {
   const amount = Number(value);
 
   if (!Number.isFinite(amount)) {
     return "";
+  }
+
+  const label = String(displayLabel || "").trim().slice(0, 40);
+
+  if (label) {
+    return `${amount.toLocaleString("es-MX", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    })} ${label}`;
   }
 
   const code = productCurrency(currency);
@@ -975,6 +984,33 @@ function money(value, currency = "MXN") {
   } catch {
     return `${amount.toLocaleString("es-MX")} ${code}`;
   }
+}
+
+function productPriceLabel(product) {
+  return String(
+    product?.currency_display_label ||
+    product?.currency ||
+    ""
+  ).trim().slice(0, 40);
+}
+
+function productMoney(value, product) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "";
+  }
+
+  const formatted = amount.toLocaleString("es-MX", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  });
+
+  const label = productPriceLabel(product);
+
+  return label
+    ? `${formatted} ${label}`
+    : formatted;
 }
 
 function localDateKey(date) {
@@ -1012,8 +1048,59 @@ function endOfWeek(date) {
   return end;
 }
 
-function ordersTotal(orders) {
-  return orders.reduce((sum, order) => sum + (order.total || 0), 0);
+function orderCurrencySnapshot(order = {}) {
+  const code = String(order?.currency || "MXN")
+    .trim()
+    .toUpperCase() || "MXN";
+  const displayLabel = String(
+    order?.currency_display_label || code
+  ).trim().slice(0, 40) || code;
+
+  return {
+    code,
+    display_label: displayLabel,
+    key: `${code}\u0000${displayLabel}`
+  };
+}
+
+function orderMoney(order) {
+  const currency = orderCurrencySnapshot(order);
+  return money(order?.total, currency.code, currency.display_label);
+}
+
+function orderLineMoney(value, order) {
+  const currency = orderCurrencySnapshot(order);
+  return money(value, currency.code, currency.display_label);
+}
+
+function ordersMoney(orders = []) {
+  const totals = new Map();
+
+  for (const order of orders) {
+    const amount = Number(order?.total);
+
+    if (!Number.isFinite(amount)) {
+      continue;
+    }
+
+    const currency = orderCurrencySnapshot(order);
+    const current = totals.get(currency.key) || {
+      amount: 0,
+      code: currency.code,
+      display_label: currency.display_label
+    };
+
+    current.amount += amount;
+    totals.set(currency.key, current);
+  }
+
+  return [...totals.values()]
+    .map((entry) => money(
+      entry.amount,
+      entry.code,
+      entry.display_label
+    ))
+    .join(" · ") || "—";
 }
 
 function formatShortDate(date) {
@@ -1518,6 +1605,57 @@ function cartTotal(items = cartItems()) {
       0
     );
 }
+
+function cartCurrencyState(items = cartItems()) {
+  let snapshot = null;
+
+  for (const item of items) {
+    const product = item?.product;
+
+    if (!product) continue;
+
+    const id = String(product.currency_id || "").trim();
+    const code = String(product.currency || "MXN")
+      .trim()
+      .toUpperCase() || "MXN";
+    const displayLabel = String(
+      product.currency_display_label || code
+    ).trim().slice(0, 40) || code;
+
+    const current = {
+      id,
+      code,
+      display_label: displayLabel,
+      key: id ? `id:${id}` : `code:${code}`
+    };
+
+    if (!snapshot) {
+      snapshot = current;
+      continue;
+    }
+
+    if (snapshot.key !== current.key) {
+      return { snapshot: null, mixed: true };
+    }
+  }
+
+  return { snapshot, mixed: false };
+}
+
+function moneyForCart(value, items = cartItems()) {
+  const currency = cartCurrencyState(items);
+
+  if (currency.mixed || !currency.snapshot) {
+    return "—";
+  }
+
+  return money(
+    value,
+    currency.snapshot.code,
+    currency.snapshot.display_label
+  );
+}
+
 function cartQuotePayload() {
   return {
     items: Object.entries(getCart()).map(([product_id, quantity]) => ({
@@ -1532,7 +1670,13 @@ function quotedCartProduct(line) {
     id: line.product_id,
     name: line.name || "Producto",
     price: Number(line.unit_price) || 0,
-    currency: line.currency || "MXN",
+    currency_id: String(line.currency_id || "").trim(),
+    currency: String(line.currency || "MXN").trim().toUpperCase(),
+    currency_display_label: String(
+      line.currency_display_label ||
+      line.currency ||
+      "MXN"
+    ).trim().slice(0, 40),
     inventory_enabled: line.inventory_enabled === true,
     available_quantity:
       line.inventory_enabled === true
@@ -2330,6 +2474,30 @@ function addToCart(id, quantity = 1) {
     return;
   }
 
+  const currentCurrency = cartCurrencyState(currentItems);
+  const productCurrencyState = cartCurrencyState([
+    { product, quantity: 1 }
+  ]);
+
+  if (currentCurrency.mixed) {
+    showToast(
+      "Tu carrito contiene monedas distintas. Quita los productos que no pertenezcan a la misma moneda."
+    );
+    return;
+  }
+
+  if (
+    currentItems.length &&
+    currentCurrency.snapshot &&
+    productCurrencyState.snapshot &&
+    currentCurrency.snapshot.key !== productCurrencyState.snapshot.key
+  ) {
+    showToast(
+      `Tu carrito usa ${currentCurrency.snapshot.display_label}. Termina o vacía tu carrito antes de agregar otra moneda.`
+    );
+    return;
+  }
+
   const currentQuantity = Math.max(0, Number(cart[id]) || 0);
   let nextQuantity = Math.max(1, Number(quantity) || 1);
 
@@ -2524,7 +2692,9 @@ function renderProductPrice(product) {
     return "";
   }
 
-  const currency = productCurrency(product.currency);
+  const currentText = escapeHtml(
+    productMoney(currentPrice, product)
+  );
 
   if (
     Number.isFinite(previousPrice) &&
@@ -2532,13 +2702,13 @@ function renderProductPrice(product) {
   ) {
     return `
       <span class="price">
-        <del>${money(previousPrice, currency)}</del>
-        ${money(currentPrice, currency)}
+        <del>${escapeHtml(productMoney(previousPrice, product))}</del>
+        ${currentText}
       </span>
     `;
   }
 
-  return `<span class="price">${money(currentPrice, currency)}</span>`;
+  return `<span class="price">${currentText}</span>`;
 }
 
 function productUnitText(product) {
@@ -2846,6 +3016,9 @@ function productDisplaySignature(product) {
     product.price,
     product.compare_at_price,
     product.currency,
+    product.currency_id,
+    product.currency_display_label,
+    product.currency_enabled,
     product.external_url,
     product.external_price_visible,
     product.unit_label,
@@ -3012,7 +3185,14 @@ function mapPublicCatalogProduct(product) {
     compare_at_price: Number.isFinite(Number(product.compare_at_price))
       ? Number(product.compare_at_price)
       : null,
-    currency: productCurrency(product.currency),
+    currency_id: String(product.currency_id || "").trim(),
+    currency: String(product.currency || "").trim().toUpperCase(),
+    currency_display_label: String(
+      product.currency_display_label ||
+      product.currency ||
+      ""
+    ).trim().slice(0, 40),
+    currency_enabled: product.currency_enabled === true,
     external_url: String(product.external_url || "").trim(),
     external_price_visible: product.external_price_visible !== false,
     unit_label: String(product.unit_label || "").trim(),
@@ -4312,6 +4492,7 @@ function renderCart() {
 
   const items = cartItems();
   const hasItems = items.length > 0;
+  const currency = cartCurrencyState(items);
   const checkoutForm = document.getElementById("checkoutForm");
   const clearCartButton = document.getElementById("clearCartBtn");
   const continueShoppingLink = document.getElementById(
@@ -4319,7 +4500,10 @@ function renderCart() {
   );
   const layout = holder.closest(".cart-layout");
 
-  checkoutForm?.toggleAttribute("hidden", !hasItems);
+  checkoutForm?.toggleAttribute(
+    "hidden",
+    !hasItems || currency.mixed
+  );
   clearCartButton?.toggleAttribute("hidden", !hasItems);
   continueShoppingLink?.toggleAttribute("hidden", !hasItems);
   layout?.classList.toggle("is-empty", !hasItems);
@@ -4341,7 +4525,7 @@ function renderCart() {
   // antes de saber si el carrito tiene productos.
   checkoutForm?.style.removeProperty("display");
 
-  if (total) total.textContent = money(cartTotal(items));
+  if (total) total.textContent = moneyForCart(cartTotal(items), items);
 
   if (!hasItems) {
     holder.innerHTML = `
@@ -4354,7 +4538,16 @@ function renderCart() {
     return;
   }
 
-  holder.innerHTML = items
+  const mixedCurrencyNotice = currency.mixed
+    ? `
+      <p class="cart-unavailable-note" role="status">
+        Tu carrito tiene productos con monedas distintas. Quita los productos
+        que no pertenezcan a la misma moneda antes de continuar.
+      </p>
+    `
+    : "";
+
+  holder.innerHTML = mixedCurrencyNotice + items
     .map(({ product, quantity }) => {
       const unavailable =
         product.cart_quote_available === false;
@@ -4369,7 +4562,11 @@ function renderCart() {
           <img src="${product.image_url || GENERIC_IMAGE}" alt="${product.name}">
           <div class="cart-item-main">
             <h2>${product.name}</h2>
-            <p>${money(product.price)}${productUnitText(product) ? ` ${productUnitText(product)}` : ""}</p>
+            <p>${money(
+              product.price,
+              product.currency,
+              product.currency_display_label
+            )}${productUnitText(product) ? ` ${productUnitText(product)}` : ""}</p>
             ${unavailable ? `
               <p class="cart-unavailable-note" role="status">
                 ${unavailableMessage}
@@ -4394,7 +4591,11 @@ function renderCart() {
                 ${unavailable ? "disabled" : ""}
               >+</button>
             </div>
-            <strong>${unavailable ? "No disponible" : money(product.price * quantity)}</strong>
+            <strong>${unavailable ? "No disponible" : money(
+              product.price * quantity,
+              product.currency,
+              product.currency_display_label
+            )}</strong>
             <button class="remove-icon" type="button" data-remove="${product.id}" aria-label="Quitar ${product.name}">Quitar</button>
           </div>
         </article>
@@ -4423,9 +4624,18 @@ function renderCart() {
 
 function buildWhatsAppMessage(orderId, customerName, locationText, shippingType, items, paymentLabel) {
   const location = formatLocationForMessage(locationText, shippingType);
+  const currency = cartCurrencyState(items).snapshot;
   const productLines = items.flatMap((item) => [
     `• ${item.quantity} x ${item.product.name}`,
-    `  ${money(item.product.price)}${productUnitText(item.product) ? ` ${productUnitText(item.product)}` : ""} = *${money(item.product.price * item.quantity)}*`
+    `  ${money(
+      item.product.price,
+      item.product.currency,
+      item.product.currency_display_label
+    )}${productUnitText(item.product) ? ` ${productUnitText(item.product)}` : ""} = *${money(
+      item.product.price * item.quantity,
+      item.product.currency,
+      item.product.currency_display_label
+    )}*`
   ]);
 
   const lines = [
@@ -4448,7 +4658,11 @@ function buildWhatsAppMessage(orderId, customerName, locationText, shippingType,
     "━━━━━━━━━━━━━━",
     "",
     "*Total:*",
-    `*${money(cartTotal(items))}*`,
+    `*${money(
+      cartTotal(items),
+      currency?.code || "MXN",
+      currency?.display_label || ""
+    )}*`,
     "",
     "*Pago:*",
     paymentLabel,
@@ -4471,6 +4685,7 @@ function makeOrderId() {
 }
 
 function saveOrder(orderId, customerName, locationText, shippingType, items, message, paymentMethod, paymentStatus) {
+  const currency = cartCurrencyState(items).snapshot;
   const order = {
     id: orderId,
     createdAt: new Date().toISOString(),
@@ -4486,6 +4701,9 @@ function saveOrder(orderId, customerName, locationText, shippingType, items, mes
     // entrega. El codigo solo existe para pedidos gestionados en Neon.
     deliveryCode: "",
     total: cartTotal(items),
+    currency: currency?.code || "MXN",
+    currency_display_label:
+      currency?.display_label || currency?.code || "MXN",
     message,
     events: [
       {
@@ -5341,6 +5559,14 @@ async function initCart() {
       return;
     }
 
+    if (cartCurrencyState(items).mixed) {
+      showToast(
+        "Tu carrito tiene monedas distintas. Quita los productos que no pertenezcan a la misma moneda."
+      );
+      renderCart();
+      return;
+    }
+
     const unavailableItem = items.find(
       (item) => item.product.cart_quote_available === false
     );
@@ -5731,7 +5957,7 @@ function managedOrderQueueCard(order, selectedOrderId) {
       </span>
 
       <span class="order-queue-total">
-        ${money(order.total)}
+        ${escapeHtml(orderMoney(order))}
       </span>
     </button>
   `;
@@ -5754,7 +5980,7 @@ function completedOrderCard(order) {
           <strong>${escapeHtml(status.label)}</strong>
           <em>${created} · ${itemCount} producto${itemCount === 1 ? "" : "s"}</em>
         </span>
-        <span class="history-total">${money(order.total)}</span>
+        <span class="history-total">${escapeHtml(orderMoney(order))}</span>
       </summary>
 
       <div class="history-detail">
@@ -5771,7 +5997,7 @@ function completedOrderCard(order) {
           ${items.map((item) => `
             <li>
               ${item.quantity} x ${escapeHtml(item.name)}
-              <strong>${money(item.price * item.quantity)}</strong>
+              <strong>${escapeHtml(orderLineMoney(item.price * item.quantity, order))}</strong>
             </li>
           `).join("")}
         </ul>
@@ -5952,7 +6178,7 @@ function whatsappOrderCard(order) {
   });
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const items = order.items
-    .map((item) => `<li>${item.quantity} x ${escapeHtml(item.name)} <strong>${money(item.price * item.quantity)}</strong></li>`)
+    .map((item) => `<li>${item.quantity} x ${escapeHtml(item.name)} <strong>${escapeHtml(orderLineMoney(item.price * item.quantity, order))}</strong></li>`)
     .join("");
 
   return `
@@ -5963,7 +6189,7 @@ function whatsappOrderCard(order) {
           <h2>Enviado por WhatsApp</h2>
           <p>${escapeHtml(order.customerName)} · ${created}</p>
         </div>
-        <strong>${money(order.total)}</strong>
+        <strong>${escapeHtml(orderMoney(order))}</strong>
       </div>
 
       <p class="whatsapp-order-note">
@@ -6222,7 +6448,7 @@ function currentOrderCard(order) {
           <h2>${escapeHtml(status.client)}</h2>
           <p>${escapeHtml(order.customerName)} · ${created}</p>
         </div>
-        <strong>${money(order.total)}</strong>
+        <strong>${escapeHtml(orderMoney(order))}</strong>
       </div>
 
       <div class="current-order-grid">
@@ -6333,6 +6559,10 @@ function serverOrderToLocal(order) {
     deliveryCode: order.delivery_code || "",
     deliveryClaimed: hasDeliveryClaim(order),
     total: Number(order.subtotal) || 0,
+    currency: String(order.currency || "MXN").trim().toUpperCase() || "MXN",
+    currency_display_label: String(
+      order.currency_display_label || order.currency || "MXN"
+    ).trim().slice(0, 40) || "MXN",
     message: "",
     fromServer: true,
     events: serverTimelineToLocal(order),
@@ -6511,7 +6741,7 @@ function localOrderCard(order) {
           <h3>${escapeHtml(order.customerName)}</h3>
           <p>${escapeHtml(order.shippingType)} · ${escapeHtml(order.paymentStatus || "Pago por confirmar")}</p>
         </div>
-        <strong>${money(order.total)}</strong>
+        <strong>${escapeHtml(orderMoney(order))}</strong>
       </div>
       <ul>${items}</ul>
       <div>
@@ -6534,7 +6764,7 @@ function compactWorkCard(order) {
       <div>
         <small>${escapeHtml(order.id)} · ${escapeHtml(order.shippingType)}</small>
         <h3>${escapeHtml(order.customerName)}</h3>
-        <p>${escapeHtml(status.label)} · ${money(order.total)}</p>
+        <p>${escapeHtml(status.label)} · ${escapeHtml(orderMoney(order))}</p>
       </div>
       ${next ? `<button class="button primary small" type="button" data-advance-order="${escapeHtml(order.id)}">${next}</button>` : ""}
     </article>
@@ -6560,22 +6790,22 @@ function renderLocalStats(history) {
     <article>
       <span>Pedidos hoy</span>
       <strong>${todayOrders.length}</strong>
-      <small>${money(ordersTotal(todayOrders))}</small>
+      <small>${escapeHtml(ordersMoney(todayOrders))}</small>
     </article>
     <article>
       <span>Activos</span>
       <strong>${activeOrders.length}</strong>
-      <small>${money(ordersTotal(activeOrders))}</small>
+      <small>${escapeHtml(ordersMoney(activeOrders))}</small>
     </article>
     <article>
       <span>Domicilio activo</span>
       <strong>${deliveryActive.length}</strong>
-      <small>${money(ordersTotal(deliveryActive))}</small>
+      <small>${escapeHtml(ordersMoney(deliveryActive))}</small>
     </article>
     <article>
       <span>Por recoger</span>
       <strong>${pickupActive.length}</strong>
-      <small>${money(ordersTotal(pickupActive))}</small>
+      <small>${escapeHtml(ordersMoney(pickupActive))}</small>
     </article>
   `;
 }
@@ -6645,7 +6875,7 @@ function renderCalendar(history) {
     return `
       <button class="${key === selectedReportDate ? "selected" : ""} ${orders.length ? "has-orders" : ""}" type="button" data-select-day="${key}">
         <span>${index + 1}</span>
-        <small>${orders.length ? `${orders.length} · ${money(ordersTotal(orders))}` : ""}</small>
+        <small>${orders.length ? `${orders.length} · ${escapeHtml(ordersMoney(orders))}` : ""}</small>
       </button>
     `;
   });
@@ -6670,7 +6900,7 @@ function reportOrderRow(order) {
         <span>${escapeHtml(order.id)} · ${escapeHtml(order.shippingType)} · ${escapeHtml(status.label)}</span>
       </div>
       <small>${items} producto${items === 1 ? "" : "s"}</small>
-      <b>${money(order.total)}</b>
+      <b>${escapeHtml(orderMoney(order))}</b>
     </article>
   `;
 }
@@ -6692,18 +6922,18 @@ function renderDayReport(history) {
       <article>
         <span>Dia</span>
         <strong>${dayOrders.length}</strong>
-        <small>${money(ordersTotal(dayOrders))}</small>
+        <small>${escapeHtml(ordersMoney(dayOrders))}</small>
       </article>
       <article>
         <span>Semana</span>
         <strong>${weekOrders.length}</strong>
         <small>${formatShortDate(weekStart)} - ${formatShortDate(weekEnd)}</small>
-        <small>${money(ordersTotal(weekOrders))}</small>
+        <small>${escapeHtml(ordersMoney(weekOrders))}</small>
       </article>
       <article>
         <span>Mes</span>
         <strong>${monthOrders.length}</strong>
-        <small>${money(ordersTotal(monthOrders))}</small>
+        <small>${escapeHtml(ordersMoney(monthOrders))}</small>
       </article>
     </div>
     <div class="report-orders">
