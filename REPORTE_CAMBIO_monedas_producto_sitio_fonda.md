@@ -19,6 +19,11 @@ El sitio público muestra cada precio con la etiqueta pública definida en ITM y
 - `node --check dist/app.js`
 - `git -c core.whitespace=cr-at-eol diff --check`
 
-## Pendiente al emitir este reporte
+## Publicación
 
-Desplegar después de aplicar las migraciones de ITM y realizar la prueba funcional publicada.
+- Fonda se publicó en Cloudflare Pages `itm-fonda-mexicana`.
+- La URL principal sirve `orderCurrencySnapshot`, verificado por HTTP.
+
+## Pendiente
+
+Subir los commits a GitHub requiere la passphrase de las llaves SSH privadas del usuario y ejecutar la prueba visual publicada.
